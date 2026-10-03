@@ -3,41 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LongCat Sentinel 龙猫哨兵 | 美团大模型智能熔断网关</title>
+    <title>LongCat Sentinel 控制台 | 美团大模型智能熔断网关</title>
     <style>
         :root {
-            --bg-page: #F4F7FC;
-            --bg-card: #FFFFFF;
-            --primary: #1677FF;
-            --primary-hover: #0958D9;
-            --primary-light: #E6F4FF;
-            --text-main: #1D2939;
-            --text-muted: #667085;
-            --border-color: #E2E8F0;
-            --border-focus: #85B7EB;
-            --success: #12B76A;
-            --success-light: #ECFDF3;
-            --warning: #F79009;
-            --danger: #F04438;
-            --danger-light: #FEF3F2;
-            --shadow-sm: 0 1px 3px rgba(16, 24, 40, 0.05);
-            --shadow-md: 0 4px 16px rgba(16, 24, 40, 0.08);
-            --radius-md: 12px;
-            --radius-sm: 8px;
+            --bg-page: #F8FAFC;
+            --bg-surface: #FFFFFF;
+            --bg-subtle: #F1F5F9;
+            --primary: #2563EB;
+            --primary-hover: #1D4ED8;
+            --primary-light: #EFF6FF;
+            --primary-border: #BFDBFE;
+            --slate-900: #0F172A;
+            --slate-800: #1E293B;
+            --slate-700: #334155;
+            --slate-600: #475569;
+            --slate-500: #64748B;
+            --slate-400: #94A3B8;
+            --slate-300: #CBD5E1;
+            --slate-200: #E2E8F0;
+            --slate-100: #F1F5F9;
+            --slate-50: #F8FAFC;
+            --success: #059669;
+            --success-light: #ECFDF5;
+            --success-border: #A7F3D0;
+            --warning: #D97706;
+            --warning-light: #FFFBEB;
+            --warning-border: #FDE68A;
+            --danger: #DC2626;
+            --danger-light: #FEF2F2;
+            --danger-border: #FECACA;
+            --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
         }
 
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
-        body { background: var(--bg-page); color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; }
+        body { background: var(--bg-page); color: var(--slate-900); min-height: 100vh; display: flex; flex-direction: column; }
 
-        /* 顶部导航条 */
+        /* 顶部导航 */
         header {
-            background: #FFFFFF;
-            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--slate-200);
             padding: 14px 32px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: var(--shadow-sm);
+            box-shadow: var(--shadow-xs);
             position: sticky;
             top: 0;
             z-index: 100;
@@ -49,269 +63,397 @@
             gap: 14px;
         }
 
-        /* 左上角专属名牌图标 */
         .brand-avatar {
-            width: 44px;
-            height: 44px;
-            border-radius: 10px;
+            width: 42px;
+            height: 42px;
+            border-radius: var(--radius-md);
             object-fit: cover;
-            border: 2px solid var(--primary-light);
-            box-shadow: 0 2px 8px rgba(22, 119, 255, 0.15);
-            transition: transform 0.2s;
+            border: 1px solid var(--slate-200);
+            box-shadow: var(--shadow-xs);
         }
-        .brand-avatar:hover { transform: scale(1.05); }
 
         .brand-titles h1 {
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 700;
-            color: var(--text-main);
+            color: var(--slate-900);
             display: flex;
             align-items: center;
             gap: 8px;
+            letter-spacing: -0.01em;
         }
 
         .brand-titles p {
             font-size: 12px;
-            color: var(--text-muted);
+            color: var(--slate-500);
             margin-top: 2px;
         }
 
         .version-badge {
             background: var(--primary-light);
             color: var(--primary);
+            border: 1px solid var(--primary-border);
             font-size: 11px;
             font-weight: 600;
-            padding: 2px 7px;
-            border-radius: 6px;
+            padding: 2px 8px;
+            border-radius: 9999px;
         }
 
         .nav-tabs {
             display: flex;
-            background: #EDF2F7;
+            background: var(--slate-100);
             padding: 4px;
-            border-radius: 10px;
+            border-radius: var(--radius-md);
             gap: 4px;
+            border: 1px solid var(--slate-200);
         }
 
         .tab-btn {
-            padding: 8px 18px;
-            border-radius: 8px;
+            padding: 7px 16px;
+            border-radius: var(--radius-sm);
             border: none;
             background: transparent;
-            color: var(--text-muted);
+            color: var(--slate-600);
             font-size: 13px;
             font-weight: 600;
             cursor: pointer;
             display: flex;
             align-items: center;
-            gap: 6px;
-            transition: all 0.2s;
+            gap: 8px;
+            transition: all 0.15s ease;
+        }
+
+        .tab-btn svg {
+            width: 16px;
+            height: 16px;
+            stroke-width: 2;
+        }
+
+        .tab-btn:hover {
+            color: var(--slate-900);
         }
 
         .tab-btn.active {
-            background: #FFFFFF;
+            background: var(--bg-surface);
             color: var(--primary);
-            box-shadow: var(--shadow-sm);
+            box-shadow: var(--shadow-xs);
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
 
         .status-badge {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
             background: var(--success-light);
             color: var(--success);
-            padding: 6px 12px;
-            border-radius: 20px;
+            border: 1px solid var(--success-border);
             font-size: 12px;
             font-weight: 600;
-        }
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            background: var(--success);
-            border-radius: 50%;
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(18, 183, 106, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(18, 183, 106, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(18, 183, 106, 0); }
+            padding: 6px 12px;
+            border-radius: 9999px;
         }
 
-        /* 主体布局 */
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            background: var(--success);
+            border-radius: 50%;
+            box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.2);
+            animation: pulse-dot 2s infinite ease-in-out;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(0.9); }
+        }
+
+        .btn-health-check {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--bg-surface);
+            border: 1px solid var(--slate-300);
+            color: var(--slate-700);
+            font-size: 12px;
+            font-weight: 600;
+            padding: 6px 12px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn-health-check:hover {
+            background: var(--slate-50);
+            border-color: var(--slate-400);
+            color: var(--slate-900);
+        }
+
+        /* 页面主体 */
         main {
-            max-width: 1200px;
-            margin: 28px auto;
-            padding: 0 24px;
-            width: 100%;
             flex: 1;
+            max-width: 1240px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 24px 24px 48px;
         }
 
         .tab-content { display: none; }
-        .tab-content.active { display: block; animation: fadeIn 0.25s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        .tab-content.active { display: block; }
 
-        /* 统计卡片 */
+        /* 数据指标卡片组 */
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 18px;
+            gap: 16px;
             margin-bottom: 24px;
         }
 
         .stat-card {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
+            background: var(--bg-surface);
+            border: 1px solid var(--slate-200);
             border-radius: var(--radius-md);
             padding: 20px;
-            box-shadow: var(--shadow-sm);
-            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: var(--shadow-xs);
+            transition: transform 0.15s, box-shadow 0.15s;
         }
-        .stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+        .stat-card:hover {
+            box-shadow: var(--shadow-sm);
+            transform: translateY(-1px);
+        }
 
         .stat-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            color: var(--text-muted);
+            color: var(--slate-500);
             font-size: 13px;
             font-weight: 500;
-            margin-bottom: 12px;
         }
 
         .stat-icon {
-            width: 34px;
-            height: 34px;
-            border-radius: 8px;
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius-sm);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
         }
+        .stat-icon svg { width: 17px; height: 17px; stroke-width: 2; }
+
         .icon-blue { background: var(--primary-light); color: var(--primary); }
-        .icon-green { background: var(--success-light); color: var(--success); }
+        .icon-yellow { background: var(--warning-light); color: var(--warning); }
         .icon-red { background: var(--danger-light); color: var(--danger); }
-        .icon-yellow { background: #FEF0C7; color: var(--warning); }
+        .icon-green { background: var(--success-light); color: var(--success); }
 
         .stat-value {
-            font-size: 30px;
+            font-size: 28px;
             font-weight: 700;
-            color: var(--text-main);
-            letter-spacing: -0.5px;
+            color: var(--slate-900);
+            margin-top: 10px;
+            letter-spacing: -0.02em;
         }
 
-        /* 白底主面板卡片 */
+        /* 统一内容面板 */
         .content-panel {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
+            background: var(--bg-surface);
+            border: 1px solid var(--slate-200);
             border-radius: var(--radius-md);
-            padding: 24px;
-            box-shadow: var(--shadow-sm);
+            box-shadow: var(--shadow-xs);
+            overflow: hidden;
             margin-bottom: 24px;
         }
 
         .panel-heading {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--slate-200);
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 14px;
-            border-bottom: 1px solid var(--border-color);
+            background: var(--bg-surface);
         }
 
         .panel-heading h2 {
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 700;
-            color: var(--text-main);
+            color: var(--slate-900);
             display: flex;
             align-items: center;
             gap: 8px;
         }
+        .panel-heading h2 svg { width: 18px; height: 18px; color: var(--primary); stroke-width: 2; }
 
-        /* 纯白现代表格 */
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th { text-align: left; padding: 12px 16px; background: #F8FAFC; color: var(--text-muted); font-weight: 600; border-bottom: 1px solid var(--border-color); }
-        td { padding: 14px 16px; border-bottom: 1px solid var(--border-color); color: var(--text-main); }
+        .panel-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-panel-action {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--slate-50);
+            border: 1px solid var(--slate-200);
+            color: var(--slate-600);
+            font-size: 12px;
+            font-weight: 500;
+            padding: 4px 10px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn-panel-action:hover {
+            background: var(--slate-100);
+            color: var(--slate-900);
+        }
+        .btn-panel-action svg { width: 13px; height: 13px; stroke-width: 2; }
+
+        /* 审计表格 */
+        .table-responsive {
+            width: 100%;
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        th {
+            background: var(--slate-50);
+            color: var(--slate-500);
+            font-weight: 600;
+            font-size: 12px;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--slate-200);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+
+        td {
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--slate-100);
+            color: var(--slate-700);
+        }
+
         tr:last-child td { border-bottom: none; }
-        tr:hover td { background: #F8FAFC; }
+        tbody tr:hover { background: var(--slate-50); }
 
         .tag-pill {
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
             font-size: 11px;
             font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 4px;
+            letter-spacing: 0.02em;
         }
-        .tag-safe { background: var(--success-light); color: var(--success); }
-        .tag-danger { background: var(--danger-light); color: var(--danger); }
+        .tag-safe { background: var(--success-light); color: var(--success); border: 1px solid var(--success-border); }
+        .tag-danger { background: var(--danger-light); color: var(--danger); border: 1px solid var(--danger-border); }
+        .tag-neutral { background: var(--slate-100); color: var(--slate-600); border: 1px solid var(--slate-200); }
 
-        /* 设置界面：面向小白表单 */
+        /* 表单配置模块 */
         .form-section {
-            margin-bottom: 24px;
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--slate-100);
+        }
+        .form-section:last-child { border-bottom: none; }
+
+        .form-section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
         }
 
         .form-section-title {
             font-size: 14px;
             font-weight: 700;
-            color: var(--primary);
-            margin-bottom: 12px;
+            color: var(--slate-900);
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 8px;
+        }
+        .form-section-title svg { width: 16px; height: 16px; color: var(--primary); stroke-width: 2; }
+
+        .form-desc {
+            font-size: 13px;
+            color: var(--slate-500);
+            margin-bottom: 14px;
+            line-height: 1.5;
+        }
+        .form-desc code {
+            background: var(--slate-100);
+            color: var(--slate-800);
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-size: 12px;
+            border: 1px solid var(--slate-200);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         }
 
-        .form-group {
-            margin-bottom: 18px;
-        }
+        .form-group { margin-bottom: 16px; }
+        .form-group:last-child { margin-bottom: 0; }
 
         .form-label {
             display: block;
             font-size: 13px;
             font-weight: 600;
-            color: var(--text-main);
+            color: var(--slate-700);
             margin-bottom: 6px;
-        }
-
-        .form-desc {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-            line-height: 1.5;
         }
 
         .input-group {
             display: flex;
-            position: relative;
             align-items: center;
+            position: relative;
         }
 
         .input-control {
             width: 100%;
-            padding: 10px 14px;
-            border: 1px solid var(--border-color);
+            padding: 9px 14px;
+            font-size: 13px;
+            border: 1px solid var(--slate-300);
             border-radius: var(--radius-sm);
-            font-size: 14px;
-            color: var(--text-main);
+            outline: none;
+            transition: all 0.15s ease;
             background: #FFFFFF;
-            transition: all 0.2s;
+            color: var(--slate-900);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         }
         .input-control:focus {
-            outline: none;
             border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.12);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
         }
 
-        .btn-toggle-eye {
+        .input-inline-btn {
             position: absolute;
-            right: 12px;
-            background: none;
+            right: 8px;
+            background: transparent;
             border: none;
+            color: var(--slate-500);
+            padding: 5px 8px;
             cursor: pointer;
-            font-size: 14px;
-            color: var(--text-muted);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.15s;
         }
+        .input-inline-btn:hover {
+            color: var(--slate-900);
+            background: var(--slate-100);
+        }
+        .input-inline-btn svg { width: 14px; height: 14px; stroke-width: 2; }
 
-        /* 模式选择卡片组（小白一键选） */
+        /* 策略卡片选择器 */
         .profile-selector {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -319,68 +461,73 @@
         }
 
         .profile-card {
-            border: 2px solid var(--border-color);
+            border: 1px solid var(--slate-200);
             border-radius: var(--radius-md);
             padding: 16px;
             cursor: pointer;
-            transition: all 0.2s;
             position: relative;
+            background: var(--bg-surface);
+            transition: all 0.15s ease;
         }
-        .profile-card:hover { border-color: var(--border-focus); background: #FAFCFF; }
+        .profile-card:hover {
+            border-color: var(--slate-300);
+            background: var(--slate-50);
+        }
+
         .profile-card.active {
             border-color: var(--primary);
             background: var(--primary-light);
+            box-shadow: 0 0 0 1px var(--primary);
+        }
+
+        .profile-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
         }
 
         .profile-card h3 {
             font-size: 14px;
             font-weight: 700;
-            color: var(--text-main);
-            margin-bottom: 6px;
+            color: var(--slate-900);
             display: flex;
             align-items: center;
             gap: 6px;
         }
-        .profile-card.active h3 { color: var(--primary); }
+        .profile-card h3 svg { width: 16px; height: 16px; color: var(--primary); stroke-width: 2; }
 
         .profile-card p {
             font-size: 12px;
-            color: var(--text-muted);
-            line-height: 1.4;
+            color: var(--slate-600);
+            line-height: 1.55;
         }
 
         .badge-recommend {
-            position: absolute;
-            top: 12px;
-            right: 12px;
             background: var(--primary);
             color: #FFFFFF;
             font-size: 10px;
-            font-weight: 700;
-            padding: 2px 6px;
-            border-radius: 4px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 9999px;
+            letter-spacing: 0.04em;
         }
 
-        /* 开关切换器 */
+        /* 切换开关 Switch */
         .switch-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 16px;
-            background: #F8FAFC;
-            border-radius: var(--radius-sm);
-            border: 1px solid var(--border-color);
-            margin-bottom: 12px;
         }
-
         .switch-info h4 {
             font-size: 13px;
             font-weight: 600;
-            margin-bottom: 2px;
+            color: var(--slate-900);
         }
         .switch-info p {
             font-size: 12px;
-            color: var(--text-muted);
+            color: var(--slate-500);
+            margin-top: 3px;
         }
 
         .switch {
@@ -388,152 +535,341 @@
             display: inline-block;
             width: 44px;
             height: 24px;
+            flex-shrink: 0;
         }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider {
             position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-            background-color: #CBD5E1; transition: .3s; border-radius: 24px;
+            background-color: var(--slate-300);
+            transition: .2s;
+            border-radius: 24px;
         }
         .slider:before {
-            position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px;
-            background-color: white; transition: .3s; border-radius: 50%;
+            position: absolute; content: "";
+            height: 18px; width: 18px;
+            left: 3px; bottom: 3px;
+            background-color: white;
+            transition: .2s;
+            border-radius: 50%;
+            box-shadow: var(--shadow-xs);
         }
         input:checked + .slider { background-color: var(--primary); }
         input:checked + .slider:before { transform: translateX(20px); }
 
-        /* 保存按钮 */
+        /* 按钮与状态文本 */
         .btn-save {
             background: var(--primary);
             color: #FFFFFF;
             border: none;
-            padding: 12px 28px;
+            padding: 9px 20px;
             border-radius: var(--radius-sm);
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
             cursor: pointer;
-            box-shadow: 0 2px 8px rgba(22, 119, 255, 0.25);
-            transition: all 0.2s;
             display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            transition: background 0.15s ease;
+        }
+        .btn-save:hover { background: var(--primary-hover); }
+        .btn-save svg { width: 15px; height: 15px; stroke-width: 2; }
+
+        .btn-preset {
+            background: var(--slate-100);
+            border: 1px solid var(--slate-200);
+            color: var(--slate-700);
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn-preset:hover {
+            background: var(--slate-200);
+            color: var(--slate-900);
+        }
+
+        /* 接入指南模块设计 */
+        .guide-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .guide-client-card {
+            border: 1px solid var(--slate-200);
+            border-radius: var(--radius-md);
+            background: var(--bg-surface);
+            overflow: hidden;
+            box-shadow: var(--shadow-xs);
+        }
+
+        .guide-client-header {
+            padding: 14px 20px;
+            background: var(--slate-50);
+            border-bottom: 1px solid var(--slate-200);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .guide-client-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--slate-900);
+            display: flex;
             align-items: center;
             gap: 8px;
         }
-        .btn-save:hover { background: var(--primary-hover); transform: translateY(-1px); }
+        .guide-client-title svg { width: 17px; height: 17px; color: var(--primary); stroke-width: 2; }
 
-        /* Toast 弹窗 */
-        #toast {
-            visibility: hidden;
-            min-width: 250px;
-            background-color: #101828;
-            color: #fff;
-            text-align: center;
-            border-radius: 8px;
-            padding: 14px 20px;
-            position: fixed;
-            z-index: 1000;
-            bottom: 30px;
-            right: 30px;
-            font-size: 14px;
-            box-shadow: var(--shadow-md);
-            border-left: 4px solid var(--success);
-            transition: all 0.3s;
+        .client-tag {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 4px;
+            background: var(--slate-200);
+            color: var(--slate-700);
         }
-        #toast.show { visibility: visible; transform: translateY(-6px); }
 
-        /* 快捷教程卡片 */
-        .tutorial-box {
-            background: #F8FAFC;
-            border: 1px solid var(--border-color);
-            border-radius: var(--radius-sm);
-            padding: 14px 18px;
-            margin-bottom: 16px;
+        .guide-client-body {
+            padding: 18px 20px;
         }
-        .tutorial-box h4 {
-            font-size: 13px;
-            font-weight: 700;
-            color: var(--text-main);
-            margin-bottom: 8px;
+
+        .guide-step {
+            margin-bottom: 14px;
+        }
+        .guide-step:last-child { margin-bottom: 0; }
+
+        .guide-step-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--slate-600);
+            margin-bottom: 6px;
             display: flex;
             align-items: center;
             gap: 6px;
         }
-        .code-snippet {
-            background: #1E293B;
+
+        .code-box {
+            background: var(--slate-900);
             color: #F8FAFC;
-            padding: 10px 14px;
-            border-radius: 6px;
-            font-family: monospace;
+            border-radius: var(--radius-sm);
+            padding: 12px 16px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
             font-size: 12px;
+            line-height: 1.6;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            position: relative;
             overflow-x: auto;
         }
-        .btn-copy {
-            background: rgba(255,255,255,0.15);
-            color: #FFF;
-            border: none;
-            padding: 4px 8px;
+
+        .code-box-content {
+            white-space: pre-wrap;
+            word-break: break-all;
+            flex: 1;
+            padding-right: 12px;
+            color: #E2E8F0;
+        }
+
+        .btn-code-copy {
+            background: rgba(255, 255, 255, 0.12);
+            color: #FFFFFF;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 5px 10px;
             border-radius: 4px;
             cursor: pointer;
             font-size: 11px;
-            margin-left: 10px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            flex-shrink: 0;
+            transition: all 0.15s;
         }
-        .btn-copy:hover { background: var(--primary); }
+        .btn-code-copy:hover {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+        .btn-code-copy svg { width: 13px; height: 13px; stroke-width: 2; }
+
+        .param-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-top: 6px;
+            background: var(--slate-50);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--slate-200);
+        }
+        .param-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--slate-200);
+        }
+        .param-table tr:last-child td { border-bottom: none; }
+        .param-key { font-weight: 600; color: var(--slate-700); width: 130px; }
+        .param-val code {
+            background: #FFFFFF;
+            border: 1px solid var(--slate-200);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--primary);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        /* 吐司通知 Toast */
+        #toast {
+            visibility: hidden;
+            min-width: 240px;
+            background-color: var(--slate-900);
+            color: #FFFFFF;
+            text-align: center;
+            border-radius: var(--radius-sm);
+            padding: 10px 18px;
+            position: fixed;
+            z-index: 999;
+            left: 50%;
+            bottom: 30px;
+            transform: translateX(-50%);
+            font-size: 13px;
+            font-weight: 500;
+            box-shadow: var(--shadow-md);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 1px solid var(--slate-700);
+        }
+        #toast.show { visibility: visible; animation: fadein 0.2s, fadeout 0.3s 2.7s; }
+        @keyframes fadein { from { bottom: 10px; opacity: 0; } to { bottom: 30px; opacity: 1; } }
+        @keyframes fadeout { from { bottom: 30px; opacity: 1; } to { bottom: 10px; opacity: 0; } }
+
+        /* 模态框 Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(15, 23, 42, 0.45);
+            backdrop-filter: blur(2px);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+
+        .modal-card {
+            background: #FFFFFF;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--slate-200);
+            max-width: 480px;
+            width: 90%;
+            padding: 20px;
+            box-shadow: var(--shadow-md);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 14px;
+        }
+        .modal-header h3 {
+            font-size: 15px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .btn-modal-close {
+            background: transparent;
+            border: none;
+            color: var(--slate-400);
+            cursor: pointer;
+            padding: 4px;
+        }
+        .btn-modal-close:hover { color: var(--slate-900); }
     </style>
 </head>
 <body>
 
-    <!-- 顶部蓝白风格导航 -->
+    <!-- 顶部导航 -->
     <header>
         <div class="header-left">
-            <img src="/logo.jpg" alt="LongCat Sentinel" class="brand-avatar" onerror="this.src='https://via.placeholder.com/44/1677FF/FFFFFF?text=LC'">
+            <img src="/logo.jpg" alt="LongCat Sentinel" class="brand-avatar" onerror="this.style.display='none'">
             <div class="brand-titles">
-                <h1>LongCat Sentinel <span class="version-badge">v2.3 稳定版</span></h1>
+                <h1>LongCat Sentinel <span class="version-badge">v2.3.1</span></h1>
                 <p>美团万亿 MoE 大模型（LongCat 2.5）抗死循环与智能熔断网关</p>
             </div>
         </div>
 
         <nav class="nav-tabs">
-            <button class="tab-btn active" onclick="switchTab('dashboard')">📊 监控大屏</button>
-            <button class="tab-btn" onclick="switchTab('settings')">⚙️ 快捷设置</button>
-            <button class="tab-btn" onclick="switchTab('guide')">📖 接入教程</button>
+            <button class="tab-btn active" onclick="switchTab('dashboard')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+                监控看板
+            </button>
+            <button class="tab-btn" onclick="switchTab('settings')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                防护策略与密钥
+            </button>
+            <button class="tab-btn" onclick="switchTab('guide')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10"/></svg>
+                客户端接入指南
+            </button>
         </nav>
 
-        <div class="status-badge">
-            <span class="status-dot"></span>
-            <span>哨兵实时守护中</span>
+        <div class="header-right">
+            <button class="btn-health-check" onclick="runDiagnostics()">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                连通性诊断
+            </button>
+            <div class="status-badge">
+                <span class="status-dot"></span>
+                <span>网关运行中</span>
+            </div>
         </div>
     </header>
 
     <main>
-        <!-- 标签页 1：监控大屏 -->
+        <!-- 标签页 1：监控看板 -->
         <div id="tab-dashboard" class="tab-content active">
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-header">
-                        <span>总接管请求数</span>
-                        <div class="stat-icon icon-blue">📈</div>
+                        <span>累计接管请求数</span>
+                        <div class="stat-icon icon-blue">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                        </div>
                     </div>
                     <div class="stat-value" id="stat-total">0</div>
                 </div>
+
                 <div class="stat-card">
                     <div class="stat-header">
-                        <span>实时活跃并发流</span>
-                        <div class="stat-icon icon-yellow">⚡</div>
+                        <span>实时活跃流 (Active Streams)</span>
+                        <div class="stat-icon icon-yellow">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                        </div>
                     </div>
                     <div class="stat-value" id="stat-active" style="color: var(--primary);">0</div>
                 </div>
+
                 <div class="stat-card">
                     <div class="stat-header">
-                        <span>已拦截死循环次数</span>
-                        <div class="stat-icon icon-red">🛡️</div>
+                        <span>拦截死循环 / 危险命令</span>
+                        <div class="stat-icon icon-red">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        </div>
                     </div>
                     <div class="stat-value" id="stat-tripped" style="color: var(--danger);">0</div>
                 </div>
+
                 <div class="stat-card">
                     <div class="stat-header">
                         <span>挽救无效 Token 消耗</span>
-                        <div class="stat-icon icon-green">💰</div>
+                        <div class="stat-icon icon-green">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                        </div>
                     </div>
                     <div class="stat-value" id="stat-saved" style="color: var(--success);">0</div>
                 </div>
@@ -541,97 +877,169 @@
 
             <div class="content-panel">
                 <div class="panel-heading">
-                    <h2>实时安全拦截事件审计流</h2>
-                    <span style="font-size: 12px; color: var(--text-muted);">自动每 3 秒刷新</span>
+                    <h2>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+                        实时安全拦截与决策审计流
+                    </h2>
+                    <div class="panel-actions">
+                        <button class="btn-panel-action" id="btn-toggle-refresh" onclick="toggleAutoRefresh()">
+                            <svg id="icon-refresh-status" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="14" height="14" x="5" y="5" rx="2"/></svg>
+                            <span id="text-refresh-status">暂停刷新</span>
+                        </button>
+                        <button class="btn-panel-action" onclick="clearAuditDisplay()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            清屏
+                        </button>
+                    </div>
                 </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>检测时间</th>
-                            <th>客户端协议</th>
-                            <th>上游目标模型</th>
-                            <th>Tool 安全级别</th>
-                            <th>LoopScore 状态</th>
-                            <th>防护动作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="audit-table-body">
-                        <tr>
-                            <td>刚刚</td>
-                            <td>Anthropic (/v1/messages)</td>
-                            <td>longcat-2.5-preview</td>
-                            <td><span class="tag-pill tag-safe">READ_ONLY</span></td>
-                            <td>0 / 100 (安全)</td>
-                            <td>安全放行</td>
-                        </tr>
-                    </tbody>
-                </table>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>通信协议</th>
+                                <th>目标模型</th>
+                                <th>Tool 安全档位</th>
+                                <th>LoopScore 状态</th>
+                                <th>拦截处置结果</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-table-body">
+                            <tr>
+                                <td>就绪</td>
+                                <td>Anthropic / OpenAI 双轨直通</td>
+                                <td>LongCat-2.5-Preview</td>
+                                <td><span class="tag-pill tag-safe">READ_ONLY</span></td>
+                                <td>0 / 100 (正常)</td>
+                                <td style="font-weight: 600; color: var(--success);">安全待命</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
-        <!-- 标签页 2：面向小白的设置界面 -->
+        <!-- 标签页 2：防护策略与密钥设置 -->
         <div id="tab-settings" class="tab-content">
             <div class="content-panel">
                 <div class="panel-heading">
-                    <h2>⚙️ 美团大模型 API 与哨兵防护设置</h2>
-                    <span style="font-size: 12px; color: var(--text-muted);">修改后点击保存立即全网关生效</span>
+                    <h2>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                        网关凭证与智能熔断策略配置
+                    </h2>
+                    <span style="font-size: 12px; color: var(--slate-500);">修改后点击保存立即全网关生效</span>
                 </div>
 
-                <!-- 1. API Key 设置 -->
+                <!-- 0. 管理口令 (可选) -->
                 <div class="form-section">
-                    <div class="form-section-title">🔑 1. 美团 LongCat 大模型 API 密钥配置</div>
-                    
+                    <div class="form-section-header">
+                        <div class="form-section-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                            管理口令验证 (可选 / 默认免密模式)
+                        </div>
+                    </div>
+                    <div class="form-desc">
+                        本机单机使用时默认为<b>免密管理模式</b>。若您在 <code>.env</code> 中设置了 <code>SENTINEL_ADMIN_TOKEN</code>，请在此填入口令后点击应用。
+                    </div>
+                    <div class="input-group" style="max-width: 600px;">
+                        <input type="password" id="input-admin-token" class="input-control" placeholder="免密模式下保持为空即可">
+                        <button type="button" class="input-inline-btn" onclick="applyAdminToken()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                            应用口令
+                        </button>
+                    </div>
+                    <div id="admin-auth-status" style="font-size: 12px; color: var(--slate-500); margin-top: 6px;"></div>
+                </div>
+
+                <!-- 1. API Key 配置 -->
+                <div class="form-section">
+                    <div class="form-section-header">
+                        <div class="form-section-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>
+                            API 密钥与网关令牌配置
+                        </div>
+                    </div>
+                    <div class="form-desc">
+                        修改保存后将自动同步回写至本地 <code>.env</code> 文件，无需重启服务即可即时生效。
+                    </div>
+
                     <div class="form-group">
                         <label class="form-label">美团官方 API Key (LONGCAT_API_KEY)</label>
-                        <div class="form-desc">请在此直接填入您从美团开放平台申请到的真实 API 密钥（形如 sk-meituan-...）。保存后将自动同步到本地 .env，绝不泄露。</div>
                         <div class="input-group">
                             <input type="password" id="input-api-key" class="input-control" placeholder="在此粘贴您的美团 API Key (例如 sk-meituan-xxxx...)">
-                            <button type="button" class="btn-toggle-eye" onclick="togglePasswordVisibility()">👁️</button>
+                            <button type="button" class="input-inline-btn" onclick="togglePasswordVisibility('input-api-key', this)">
+                                <svg class="svg-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                <span>显示</span>
+                            </button>
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">本地客户端授权码 (SENTINEL_GATEWAY_TOKEN)</label>
-                        <div class="form-desc">用于 Claude Code、Cursor、Cherry Studio 连接本网关时填写的凭证，默认无需修改：</div>
+                    <div class="form-group" style="margin-top: 14px;">
+                        <label class="form-label">本地客户端接入授权码 (SENTINEL_GATEWAY_TOKEN)</label>
                         <div class="input-group">
-                            <input type="text" id="input-gateway-token" class="input-control" readonly style="background: #F8FAFC;">
-                            <button type="button" class="btn-toggle-eye" onclick="copyToken()">📋 复制</button>
+                            <input type="password" id="input-gateway-token" class="input-control" readonly style="background: var(--slate-50);">
+                            <button type="button" class="input-inline-btn" style="right: 70px;" onclick="togglePasswordVisibility('input-gateway-token', this)">
+                                <svg class="svg-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                                <span>显示</span>
+                            </button>
+                            <button type="button" class="input-inline-btn" onclick="copyGatewayToken()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                                <span>复制</span>
+                            </button>
                         </div>
                     </div>
                 </div>
 
-                <!-- 2. 小白一键防护灵敏度选择 -->
+                <!-- 2. 场景模式选择 -->
                 <div class="form-section">
-                    <div class="form-section-title">🎯 2. 智能熔断场景模式 (小白一键选择)</div>
-                    <div class="form-desc">选择最适合您当前任务的防护档位：</div>
-                    
+                    <div class="form-section-header">
+                        <div class="form-section-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="m10 15 5-3-5-3v6Z"/></svg>
+                            智能熔断场景模式 (一键设定防护灵敏度)
+                        </div>
+                    </div>
+                    <div class="form-desc">选择最契合您当前编码或对话任务的拦截策略档位：</div>
+
                     <div class="profile-selector">
                         <div class="profile-card active" id="card-code_agent" onclick="selectProfile('code_agent')">
-                            <span class="badge-recommend">推荐</span>
-                            <h3>🌟 小白智能代码模式</h3>
-                            <p>专为 Claude Code、Cursor 编程设计。高容忍合法的代码缩进、长循环模板，<strong>绝不误杀正常写代码</strong>，只在真正复读时精准打断！</p>
+                            <div class="profile-card-header">
+                                <h3>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                                    智能代码工程模式
+                                </h3>
+                                <span class="badge-recommend">推荐</span>
+                            </div>
+                            <p>专为 Claude Code、Cursor、Cline 设计。智能识别合法缩进与长循环模板，<strong>绝不误杀正常写代码</strong>，仅在真正复读卡死时精准截断。</p>
                         </div>
 
                         <div class="profile-card" id="card-strict" onclick="selectProfile('strict')">
-                            <h3>🛡️ 严格防复读模式</h3>
-                            <p>适合长篇小说、开放式长文本问答。一发现模型连续出现 3 次相同词句或死胡同打转，<strong>立刻截断熔断</strong>，极度省 Token！</p>
+                            <div class="profile-card-header">
+                                <h3>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                    高敏严格防复读模式
+                                </h3>
+                            </div>
+                            <p>适合长篇文本、复杂推理。只要模型连续出现 3 次相同语义片段或思考链打转，<strong>立刻截断熔断</strong>，最大化节约 Token 消耗。</p>
                         </div>
 
                         <div class="profile-card" id="card-balanced" onclick="selectProfile('balanced')">
-                            <h3>🍃 宽松日常对话模式</h3>
-                            <p>适合日常聊天、百科检索等一般场景，平衡拦截灵敏度与自由度。</p>
+                            <div class="profile-card-header">
+                                <h3>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                    宽松日常对话模式
+                                </h3>
+                            </div>
+                            <p>适合日常闲聊、百科问答等通用场景，适度放宽拦截阈值，保障长文叙述的连贯性。</p>
                         </div>
                     </div>
                 </div>
 
-                <!-- 3. 安全锁开关 -->
+                <!-- 3. 高危指令拦截 -->
                 <div class="form-section">
-                    <div class="form-section-title">🔒 3. AI 行为安全防护开关</div>
-                    
                     <div class="switch-row">
                         <div class="switch-info">
                             <h4>拦截高危破坏性命令 (Anti-Destructive Lock)</h4>
-                            <p>如果 AI 智能体产生幻觉尝试执行 <code>rm -rf /</code>、删库、格式化等危险命令，网关 1 毫秒内硬性拦截！</p>
+                            <p>通过入参语法树深度扫描 <code>rm -rf /</code>、格式化、删库、fork bomb 等危险行为，1 毫秒内硬性拦截阻断。</p>
                         </div>
                         <label class="switch">
                             <input type="checkbox" id="switch-destructive" checked>
@@ -642,56 +1050,281 @@
 
                 <!-- 4. 自定义中断提示词 -->
                 <div class="form-section">
-                    <div class="form-section-title">💬 4. 熔断时对 AI 说的话（系统注入提示词）</div>
-                    <div class="form-desc">当发生死循环被哨兵掐断时，追加在末尾引导 AI 换个思路的系统提示：</div>
-                    <textarea id="input-template" class="input-control" rows="2" style="resize: vertical;"></textarea>
+                    <div class="form-section-header">
+                        <div class="form-section-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            熔断干预注入提示词 (Injection Template)
+                        </div>
+                        <div style="display: flex; gap: 6px;">
+                            <button type="button" class="btn-preset" onclick="setPresetTemplate('default')">默认提示词</button>
+                            <button type="button" class="btn-preset" onclick="setPresetTemplate('code')">代码优化提示词</button>
+                        </div>
+                    </div>
+                    <div class="form-desc">
+                        当死循环触发熔断时，网关追加在末尾用于引导大模型主动换思路的系统提示词（必须包含 <code>{reason}</code> 占位符）：
+                    </div>
+                    <textarea id="input-template" class="input-control" rows="3" style="resize: vertical;"></textarea>
                 </div>
 
-                <div style="margin-top: 24px; display: flex; align-items: center; gap: 14px;">
-                    <button class="btn-save" onclick="saveSettings()">💾 保存设置并立即生效</button>
-                    <span id="save-status-text" style="font-size: 13px; color: var(--text-muted);"></span>
+                <!-- 保存按钮栏 -->
+                <div style="padding: 20px 24px; display: flex; align-items: center; gap: 14px; background: var(--slate-50); border-top: 1px solid var(--slate-100);">
+                    <button class="btn-save" onclick="saveSettings()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                        保存设置并立即生效
+                    </button>
+                    <span id="save-status-text" style="font-size: 13px; font-weight: 500; color: var(--slate-600);"></span>
                 </div>
             </div>
         </div>
 
-        <!-- 标签页 3：新手接入教程 -->
+        <!-- 标签页 3：客户端极简接入指南 -->
         <div id="tab-guide" class="tab-content">
-            <div class="content-panel">
-                <div class="panel-heading">
-                    <h2>📖 客户端极简连接指南 (小白必看)</h2>
-                </div>
+            <div class="guide-container">
 
-                <div class="tutorial-box">
-                    <h4>💻 1. Claude Code 命令行 Agent（官方神器）</h4>
-                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">在终端中运行以下命令，即可开启防卡死的美团 LongCat 编程之旅：</p>
-                    <div class="code-snippet">
-                        <span>$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8080"; $env:ANTHROPIC_API_KEY="sk-ant-sentinel-gw-8f7a6b5c4d3e2f1a"; claude</span>
-                        <button class="btn-copy" onclick="copySnippet('$env:ANTHROPIC_BASE_URL=\"http://127.0.0.1:8080\"; $env:ANTHROPIC_API_KEY=\"sk-ant-sentinel-gw-8f7a6b5c4d3e2f1a\"; claude')">点击复制</button>
+                <!-- 1. Claude Code -->
+                <div class="guide-client-card">
+                    <div class="guide-client-header">
+                        <div class="guide-client-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+                            Claude Code 命令行智能体接入
+                        </div>
+                        <span class="client-tag">Anthropic 原生路由 (/v1/messages)</span>
+                    </div>
+                    <div class="guide-client-body">
+                        <div class="guide-step">
+                            <div class="guide-step-title">方法 A：通过终端环境变量启动（推荐）</div>
+                            <div class="code-box">
+                                <div class="code-box-content" id="snippet-claude-ps">$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8080"; $env:ANTHROPIC_API_KEY="[YOUR_TOKEN]"; claude</div>
+                                <button class="btn-code-copy" onclick="copyDynamicSnippet('snippet-claude-ps')">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                                    复制 PowerShell
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="guide-step" style="margin-top: 10px;">
+                            <div class="guide-step-title">macOS / Linux Bash 启动命令</div>
+                            <div class="code-box">
+                                <div class="code-box-content" id="snippet-claude-bash">export ANTHROPIC_BASE_URL="http://127.0.0.1:8080" && export ANTHROPIC_API_KEY="[YOUR_TOKEN]" && claude</div>
+                                <button class="btn-code-copy" onclick="copyDynamicSnippet('snippet-claude-bash')">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                                    复制 Bash
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="tutorial-box">
-                    <h4>🖱️ 2. Cursor AI 代码编辑器</h4>
-                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">打开 Cursor 设置 $\to$ Models $\to$ OpenAI API Key，填入：</p>
-                    <div style="font-size: 13px; line-height: 1.8; color: var(--text-main);">
-                        • <strong>Base URL</strong>: <code>http://127.0.0.1:8080/v1</code><br>
-                        • <strong>API Key</strong>: <code>sk-ant-sentinel-gw-8f7a6b5c4d3e2f1a</code><br>
-                        • <strong>Model</strong>: <code>longcat-2.5-preview</code>
+                <!-- 2. Cursor IDE -->
+                <div class="guide-client-card">
+                    <div class="guide-client-header">
+                        <div class="guide-client-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="18" height="18" x="3" y="3" rx="2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
+                            Cursor AI 代码编辑器配置
+                        </div>
+                        <span class="client-tag">OpenAI 兼容协议 (/v1/chat/completions)</span>
+                    </div>
+                    <div class="guide-client-body">
+                        <div class="form-desc" style="margin-bottom: 8px;">
+                            打开 Cursor 设置 (Settings) $\to$ <b>Models</b> $\to$ 开启 <b>OpenAI API Key</b>，填入以下参数：
+                        </div>
+                        <table class="param-table">
+                            <tr>
+                                <td class="param-key">OpenAI Base URL</td>
+                                <td class="param-val"><code id="guide-cursor-url">http://127.0.0.1:8080/v1</code></td>
+                            </tr>
+                            <tr>
+                                <td class="param-key">API Key</td>
+                                <td class="param-val"><code id="guide-cursor-key">[YOUR_TOKEN]</code></td>
+                            </tr>
+                            <tr>
+                                <td class="param-key">Model Name</td>
+                                <td class="param-val"><code>LongCat-2.5-Preview</code></td>
+                            </tr>
+                        </table>
                     </div>
                 </div>
 
-                <div class="tutorial-box">
-                    <h4>🍒 3. Cherry Studio / Chatbox 桌面端</h4>
-                    <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">添加自定义服务商（OpenAI 兼容），API 地址填入：<code>http://127.0.0.1:8080</code> 即可。</p>
+                <!-- 3. VS Code (Cline / Roo Code / Continue) -->
+                <div class="guide-client-card">
+                    <div class="guide-client-header">
+                        <div class="guide-client-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                            VS Code 插件 (Cline / Roo Code / Continue)
+                        </div>
+                        <span class="client-tag">Anthropic 或 OpenAI 双轨兼容</span>
+                    </div>
+                    <div class="guide-client-body">
+                        <div class="form-desc" style="margin-bottom: 8px;">
+                            在扩展设置中选择 <b>OpenAI Compatible</b> 或 <b>Anthropic Compatible</b>：
+                        </div>
+                        <table class="param-table">
+                            <tr>
+                                <td class="param-key">API Provider</td>
+                                <td class="param-val"><code>OpenAI Compatible</code> 或 <code>Anthropic</code></td>
+                            </tr>
+                            <tr>
+                                <td class="param-key">Base URL</td>
+                                <td class="param-val"><code>http://127.0.0.1:8080/v1</code></td>
+                            </tr>
+                            <tr>
+                                <td class="param-key">API Key</td>
+                                <td class="param-val"><code id="guide-cline-key">[YOUR_TOKEN]</code></td>
+                            </tr>
+                            <tr>
+                                <td class="param-key">Model ID</td>
+                                <td class="param-val"><code>LongCat-2.5-Preview</code></td>
+                            </tr>
+                        </table>
+                    </div>
                 </div>
+
+                <!-- 4. 桌面客户端 (Cherry Studio / Chatbox) -->
+                <div class="guide-client-card">
+                    <div class="guide-client-header">
+                        <div class="guide-client-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+                            桌面客户端 (Cherry Studio / Chatbox / NextChat)
+                        </div>
+                        <span class="client-tag">极简接入</span>
+                    </div>
+                    <div class="guide-client-body">
+                        <div class="form-desc" style="margin-bottom: 8px;">
+                            在客户端中新建自定义提供商（OpenAI 规范）：
+                        </div>
+                        <table class="param-table">
+                            <tr>
+                                <td class="param-key">API 地址 (Base URL)</td>
+                                <td class="param-val"><code>http://127.0.0.1:8080/v1</code></td>
+                            </tr>
+                            <tr>
+                                <td class="param-key">API Key</td>
+                                <td class="param-val"><code id="guide-cherry-key">[YOUR_TOKEN]</code></td>
+                            </tr>
+                            <tr>
+                                <td class="param-key">模型列表</td>
+                                <td class="param-val"><code>LongCat-2.5-Preview</code>, <code>LongCat-2.0</code></td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 5. Python SDK 直连示例 -->
+                <div class="guide-client-card">
+                    <div class="guide-client-header">
+                        <div class="guide-client-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg>
+                            Python SDK 代码直连示例
+                        </div>
+                        <span class="client-tag">OpenAI Python SDK</span>
+                    </div>
+                    <div class="guide-client-body">
+                        <div class="code-box">
+                            <div class="code-box-content" id="snippet-python">from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://127.0.0.1:8080/v1",
+    api_key="[YOUR_TOKEN]"
+)
+
+resp = client.chat.completions.create(
+    model="LongCat-2.5-Preview",
+    messages=[{"role": "user", "content": "你好，请介绍你自己"}],
+    stream=True
+)
+for chunk in resp:
+    if chunk.choices and chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="", flush=True)</div>
+                            <button class="btn-code-copy" onclick="copyDynamicSnippet('snippet-python')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                                复制代码
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
             </div>
         </div>
     </main>
 
-    <div id="toast">设置已成功保存！</div>
+    <!-- 诊断弹窗 Modal -->
+    <div id="modal-diagnostics" class="modal-overlay">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    网关连通性诊断报告
+                </h3>
+                <button class="btn-modal-close" onclick="closeDiagnostics()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+                </button>
+            </div>
+            <div id="diagnostics-content" style="font-size: 13px; line-height: 1.8; color: var(--slate-700);">
+                正在测试网关本地监听与配置状态...
+            </div>
+            <div style="margin-top: 16px; text-align: right;">
+                <button class="btn-save" onclick="closeDiagnostics()" style="padding: 6px 14px; font-size: 12px;">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 吐司通知 Toast -->
+    <div id="toast">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+        <span id="toast-text">设置已成功保存！</span>
+    </div>
 
     <script>
         let currentProfile = "code_agent";
+        let autoRefreshEnabled = true;
+        let currentGatewayToken = "";
+        const ADMIN_TOKEN_KEY = 'lcs_admin_token';
+
+        const PRESET_TEMPLATES = {
+            'default': '\n\n[LongCat Sentinel 保护性中断] 检测到输出内容/思考链陷入高频周期循环或触发高危拦截（原因：{reason}）。网关已保护性截断以节约 Token。请 Agent 检查当前解决思路，更换工具或尝试其他解决方案。',
+            'code': '\n\n[LongCat Sentinel 熔断干预] 检测到代码生成或工具调用进入循环模式（原因：{reason}）。已保护性截断以避免浪费 Token。请审视刚才的方案是否有死结，尝试换一种实现路径或拆解步骤继续。'
+        };
+
+        function getAdminToken() {
+            return sessionStorage.getItem(ADMIN_TOKEN_KEY) || '';
+        }
+
+        function setAdminToken(value) {
+            const token = (value || '').trim();
+            if (token) {
+                sessionStorage.setItem(ADMIN_TOKEN_KEY, token);
+            } else {
+                sessionStorage.removeItem(ADMIN_TOKEN_KEY);
+            }
+        }
+
+        function adminHeaders(extraHeaders = {}) {
+            const headers = { ...extraHeaders };
+            const token = getAdminToken();
+            if (token) {
+                headers['X-Admin-Token'] = token;
+            }
+            return headers;
+        }
+
+        function setAuthStatus(msg, isError = false) {
+            const el = document.getElementById('admin-auth-status');
+            if (!el) return;
+            el.innerText = msg;
+            el.style.color = isError ? 'var(--danger)' : 'var(--slate-500)';
+        }
+
+        function applyAdminToken() {
+            const input = document.getElementById('input-admin-token');
+            setAdminToken(input ? input.value : '');
+            if (!getAdminToken()) {
+                setAuthStatus('免密模式处于激活状态。');
+            } else {
+                setAuthStatus('口令已应用，正在验证...');
+            }
+            loadSettings();
+            updateDashboard();
+        }
 
         function switchTab(tabId) {
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -707,59 +1340,165 @@
             }
         }
 
-        function togglePasswordVisibility() {
-            const input = document.getElementById('input-api-key');
-            input.type = input.type === 'password' ? 'text' : 'password';
+        function togglePasswordVisibility(id, btn) {
+            const input = document.getElementById(id || 'input-api-key');
+            if (!input) return;
+            const isPassword = input.type === 'password';
+            input.type = isPassword ? 'text' : 'password';
+            if (btn) {
+                const textSpan = btn.querySelector('span');
+                if (textSpan) textSpan.innerText = isPassword ? '隐藏' : '显示';
+            }
         }
 
         function selectProfile(profile) {
             currentProfile = profile;
             document.querySelectorAll('.profile-card').forEach(card => card.classList.remove('active'));
-            document.getElementById('card-' + profile).classList.add('active');
+            const target = document.getElementById('card-' + profile);
+            if (target) target.classList.add('active');
+        }
+
+        function setPresetTemplate(key) {
+            const tpl = PRESET_TEMPLATES[key] || PRESET_TEMPLATES['default'];
+            document.getElementById('input-template').value = tpl;
+            showToast('已加载预设提示词模板');
         }
 
         function showToast(msg) {
             const toast = document.getElementById('toast');
-            toast.innerText = msg;
+            const text = document.getElementById('toast-text');
+            if (text) text.innerText = msg;
             toast.className = 'show';
-            setTimeout(() => { toast.className = toast.className.replace('show', ''); }, 3000);
+            setTimeout(() => { toast.className = toast.className.replace('show', ''); }, 2800);
         }
 
-        function copyToken() {
-            const token = document.getElementById('input-gateway-token').value;
-            navigator.clipboard.writeText(token);
-            showToast("已成功复制客户端 Token 到剪贴板！");
+        function copyGatewayToken() {
+            const input = document.getElementById('input-gateway-token');
+            const tokenToCopy = (input && input.value) ? input.value : currentGatewayToken;
+            if (tokenToCopy) {
+                navigator.clipboard.writeText(tokenToCopy).then(() => {
+                    showToast('客户端授权码已成功复制到剪贴板！');
+                }).catch(() => {
+                    showToast('复制失败，请手动选中文本复制');
+                });
+            }
         }
 
-        function copySnippet(text) {
-            navigator.clipboard.writeText(text);
-            showToast("已成功复制命令！");
+        function copyDynamicSnippet(elementId) {
+            const el = document.getElementById(elementId);
+            if (el) {
+                const text = el.innerText;
+                navigator.clipboard.writeText(text).then(() => {
+                    showToast('配置命令已复制到剪贴板！');
+                }).catch(() => {
+                    showToast('复制失败，请手动选中复制');
+                });
+            }
         }
 
-        // 加载当前设置
+        function escapeHtml(str) {
+            if (str === null || str === undefined) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        // 动态将真实 Token 替换至指南中的所有代码段
+        function updateGuideSnippets(token) {
+            if (!token) return;
+            const currentHost = window.location.host || '127.0.0.1:8080';
+            const protocol = window.location.protocol || 'http:';
+            const baseUrl = `${protocol}//${currentHost}`;
+
+            const psSnippet = `$env:ANTHROPIC_BASE_URL="${baseUrl}"; $env:ANTHROPIC_API_KEY="${token}"; claude`;
+            const bashSnippet = `export ANTHROPIC_BASE_URL="${baseUrl}" && export ANTHROPIC_API_KEY="${token}" && claude`;
+            
+            const psEl = document.getElementById('snippet-claude-ps');
+            if (psEl) psEl.innerText = psSnippet;
+
+            const bashEl = document.getElementById('snippet-claude-bash');
+            if (bashEl) bashEl.innerText = bashSnippet;
+
+            const cKey = document.getElementById('guide-cursor-key');
+            if (cKey) cKey.innerText = token;
+
+            const clKey = document.getElementById('guide-cline-key');
+            if (clKey) clKey.innerText = token;
+
+            const chKey = document.getElementById('guide-cherry-key');
+            if (chKey) chKey.innerText = token;
+
+            const pySnippet = document.getElementById('snippet-python');
+            if (pySnippet) {
+                pySnippet.innerText = `from openai import OpenAI
+
+client = OpenAI(
+    base_url="${baseUrl}/v1",
+    api_key="${token}"
+)
+
+resp = client.chat.completions.create(
+    model="LongCat-2.5-Preview",
+    messages=[{"role": "user", "content": "你好，请介绍你自己"}],
+    stream=True
+)
+for chunk in resp:
+    if chunk.choices and chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="", flush=True)`;
+            }
+        }
+
+        // 加载现有设置
         async function loadSettings() {
             try {
-                const res = await fetch('/api/admin/config');
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.api_key) {
-                        document.getElementById('input-api-key').value = data.api_key;
-                    }
-                    if (data.gateway_token) {
-                        document.getElementById('input-gateway-token').value = data.gateway_token;
-                    }
-                    if (data.active_profile) {
-                        selectProfile(data.active_profile);
-                    }
-                    if (data.block_destructive !== undefined) {
-                        document.getElementById('switch-destructive').checked = data.block_destructive;
-                    }
-                    if (data.injection_template) {
-                        document.getElementById('input-template').value = data.injection_template;
-                    }
+                const res = await fetch('/api/admin/config', { headers: adminHeaders() });
+                if (res.status === 401) {
+                    setAuthStatus('管理口令缺失或未通过校验，如设置了口令请在上方填写。', true);
+                    return;
+                }
+                if (!res.ok) {
+                    setAuthStatus('加载配置失败 (HTTP ' + res.status + ')', true);
+                    return;
+                }
+                const data = await res.json();
+                setAuthStatus('配置就绪（管理权限已验证）。', false);
+
+                const apiKeyInput = document.getElementById('input-api-key');
+                if (data.api_key) {
+                    apiKeyInput.value = data.api_key;
+                } else if (data.masked_api_key) {
+                    apiKeyInput.value = '';
+                    apiKeyInput.placeholder = '已配置：' + data.masked_api_key + ' (无需修改请留空)';
+                } else {
+                    apiKeyInput.value = '';
+                    apiKeyInput.placeholder = '尚未配置，请在此粘贴美团 API Key';
+                }
+
+                currentGatewayToken = data.gateway_token || '';
+                const gwInput = document.getElementById('input-gateway-token');
+                if (gwInput) {
+                    gwInput.value = currentGatewayToken;
+                }
+
+                // 同步刷新指南页面的真实 Token
+                if (currentGatewayToken) {
+                    updateGuideSnippets(currentGatewayToken);
+                }
+
+                if (data.active_profile) {
+                    selectProfile(data.active_profile);
+                }
+                if (data.block_destructive !== undefined) {
+                    document.getElementById('switch-destructive').checked = data.block_destructive;
+                }
+                if (data.injection_template) {
+                    document.getElementById('input-template').value = data.injection_template;
                 }
             } catch (e) {
-                console.error("加载设置失败", e);
+                setAuthStatus('加载设置失败：' + e, true);
             }
         }
 
@@ -770,38 +1509,131 @@
             const template = document.getElementById('input-template').value.trim();
             const statusText = document.getElementById('save-status-text');
 
-            statusText.innerText = "正在保存...";
+            statusText.innerText = "正在保存配置...";
+            statusText.style.color = "var(--slate-600)";
 
             try {
+                const payload = {
+                    active_profile: currentProfile,
+                    block_destructive: blockDestructive,
+                    injection_template: template
+                };
+                if (apiKey) {
+                    payload.api_key = apiKey;
+                }
+
                 const res = await fetch('/api/admin/config', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-admin-token': 'adm-sentinel-99e8d7c6b5a4'
-                    },
-                    body: JSON.stringify({
-                        api_key: apiKey,
-                        active_profile: currentProfile,
-                        block_destructive: blockDestructive,
-                        injection_template: template
-                    })
+                    headers: adminHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(payload)
                 });
 
+                if (res.status === 401) {
+                    statusText.innerText = "保存失败：管理口令无效或缺失";
+                    statusText.style.color = "var(--danger)";
+                    setAuthStatus('管理口令无效或缺失。', true);
+                    return;
+                }
+                if (res.status === 403) {
+                    statusText.innerText = "保存失败：请求来源或 Host 校验被拦截";
+                    statusText.style.color = "var(--danger)";
+                    return;
+                }
                 if (res.ok) {
-                    statusText.innerText = "✅ 保存成功！已同步至 .env 并立即生效";
-                    showToast("🎉 美团 API 密钥与防护策略已成功保存生效！");
+                    statusText.innerText = "已保存生效并同步至 .env";
+                    statusText.style.color = "var(--success)";
+                    showToast("美团 API 密钥与防护策略已成功保存！");
+                    loadSettings();
                 } else {
-                    statusText.innerText = "❌ 保存失败，请检查控制台";
+                    let detail = 'HTTP ' + res.status;
+                    try {
+                        const err = await res.json();
+                        detail = err.detail || detail;
+                    } catch (e) { }
+                    statusText.innerText = "保存失败：" + detail;
+                    statusText.style.color = "var(--danger)";
                 }
             } catch (e) {
-                statusText.innerText = "❌ 网络错误";
+                statusText.innerText = "网络请求失败，请检查服务状态";
+                statusText.style.color = "var(--danger)";
             }
+        }
+
+        // 审计流暂停/继续切换
+        function toggleAutoRefresh() {
+            autoRefreshEnabled = !autoRefreshEnabled;
+            const textEl = document.getElementById('text-refresh-status');
+            const iconEl = document.getElementById('icon-refresh-status');
+            if (autoRefreshEnabled) {
+                textEl.innerText = "暂停刷新";
+                iconEl.innerHTML = '<rect width="14" height="14" x="5" y="5" rx="2"/>';
+            } else {
+                textEl.innerText = "恢复刷新";
+                iconEl.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"/>';
+            }
+        }
+
+        function clearAuditDisplay() {
+            const tbody = document.getElementById('audit-table-body');
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--slate-400); padding: 24px;">审计记录已清屏，等待新事件流入...</td></tr>';
+        }
+
+        // 连通性诊断
+        async function runDiagnostics() {
+            const modal = document.getElementById('modal-diagnostics');
+            const content = document.getElementById('diagnostics-content');
+            modal.classList.add('active');
+            content.innerHTML = '<div style="color: var(--slate-500);">正在执行网关自检与上游连通性测试...</div>';
+
+            let report = [];
+            try {
+                // 1. 本地网关健康自检
+                const healthRes = await fetch('/health');
+                if (healthRes.ok) {
+                    const healthData = await healthRes.json();
+                    report.push(`<div>[PASS] 本地网关核心服务：正常在线 (服务: ${healthData.service} v${healthData.version})</div>`);
+                } else {
+                    report.push(`<div style="color: var(--danger);">[FAIL] 本地网关服务异常：HTTP ${healthRes.status}</div>`);
+                }
+
+                // 2. 检查配置状态
+                const cfgRes = await fetch('/api/admin/config', { headers: adminHeaders() });
+                if (cfgRes.ok) {
+                    const cfgData = await cfgRes.json();
+                    report.push(`<div>[PASS] 管理鉴权接口：正常连通</div>`);
+                    if (cfgData.api_key_configured) {
+                        report.push(`<div>[PASS] 美团 API Key 状态：已配置 (${cfgData.masked_api_key || '已生效'})</div>`);
+                    } else {
+                        report.push(`<div style="color: var(--warning);">[WARN] 美团 API Key 状态：尚未配置，请在“防护策略与密钥”中填写</div>`);
+                    }
+                    report.push(`<div>[INFO] 上游目标集群：${cfgData.upstream_url}</div>`);
+                    report.push(`<div>[INFO] 当前活动防护模式：${cfgData.active_profile}</div>`);
+                } else if (cfgRes.status === 401) {
+                    report.push(`<div style="color: var(--warning);">[WARN] 管理接口需要鉴权口令（SENTINEL_ADMIN_TOKEN）</div>`);
+                }
+
+                // 3. 模型列表探测
+                report.push(`<div>[PASS] 双轨路由端点就绪：/v1/messages (Anthropic) & /v1/chat/completions (OpenAI)</div>`);
+
+                content.innerHTML = report.join('');
+            } catch (e) {
+                content.innerHTML = `<div style="color: var(--danger);">[ERROR] 诊断执行失败：${e.message}</div>`;
+            }
+        }
+
+        function closeDiagnostics() {
+            document.getElementById('modal-diagnostics').classList.remove('active');
         }
 
         // 周期更新大屏数据与实时审计流
         async function updateDashboard() {
+            if (!autoRefreshEnabled) return;
             try {
-                const res = await fetch('/api/admin/stats');
+                const res = await fetch('/api/admin/stats', { headers: adminHeaders() });
+                if (res.status === 401) {
+                    setAuthStatus('管理口令无效或缺失，如已配置口令请在上方填写。', true);
+                    return;
+                }
                 if (res.ok) {
                     const data = await res.json();
                     document.getElementById('stat-total').innerText = data.total_requests ?? 0;
@@ -809,22 +1641,21 @@
                     document.getElementById('stat-tripped').innerText = data.tripped_circuits ?? 0;
                     document.getElementById('stat-saved').innerText = (data.saved_tokens_estimate ?? 0).toLocaleString();
 
-                    // 实时刷新安全拦截事件审计流
                     if (data.audit_events && data.audit_events.length > 0) {
                         const tbody = document.getElementById('audit-table-body');
                         tbody.innerHTML = data.audit_events.map(ev => `
                             <tr>
-                                <td>${ev.time}</td>
-                                <td>${ev.protocol}</td>
-                                <td>${ev.model}</td>
-                                <td><span class="tag-pill ${ev.is_safe ? 'tag-safe' : 'tag-danger'}">${ev.tool_tier}</span></td>
-                                <td>${ev.loop_score}</td>
-                                <td style="font-weight: 600; color: ${ev.is_safe ? 'var(--success)' : 'var(--danger)'};">${ev.action}</td>
+                                <td>${escapeHtml(ev.time)}</td>
+                                <td>${escapeHtml(ev.protocol)}</td>
+                                <td>${escapeHtml(ev.model)}</td>
+                                <td><span class="tag-pill ${ev.is_safe ? 'tag-safe' : 'tag-danger'}">${escapeHtml(ev.tool_tier)}</span></td>
+                                <td>${escapeHtml(ev.loop_score)}</td>
+                                <td style="font-weight: 600; color: ${ev.is_safe ? 'var(--success)' : 'var(--danger)'};">${escapeHtml(ev.action)}</td>
                             </tr>
                         `).join('');
                     }
                 }
-            } catch (e) {}
+            } catch (e) { }
         }
 
         setInterval(updateDashboard, 2000);

@@ -22,7 +22,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 def run_tests() -> int:
     print("=" * 75)
-    print("LongCat Sentinel v2.3 Enterprise Final Hardened Edition — Test Runner")
+    print("LongCat Sentinel v2.3.1 Security Hardened Edition — Test Runner")
     print("=" * 75)
 
     loader = unittest.TestLoader()

@@ -1,26 +1,52 @@
 # ==============================================================================
 # LongCat Sentinel - OpenAI Native Router (/v1/chat/completions)
+#
+# Mirrors the Anthropic pipeline: admission control, decoupled timeouts,
+# config-driven detection, incremental loop scoring and real tool-call guarding
+# (including streaming `tool_calls` deltas).
 # ==============================================================================
-import httpx
+from __future__ import annotations
+
+import asyncio
 import json
 import time
-import os
-from pathlib import Path
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Dict, Optional
+
+import httpx
 from fastapi import Request, Response
 from fastapi.responses import StreamingResponse
-from ..config import GatewayConfig
+
 from ..breaker.compliant_injector import CompliantInjector
-from ..detector.loop_scorer import LoopScorer
+from ..config import GatewayConfig
+from ..detector.parallel_tool_tracker import ParallelToolTracker
 from ..detector.ring_buffer import RingBuffer
 from ..metrics import metrics
+from . import (
+    bad_gateway,
+    build_scorer,
+    build_tool_guard,
+    parse_json_body,
+    payload_too_large,
+    resolve_profile,
+    resolve_upstream_key,
+    too_large_declared,
+    too_many_streams,
+)
+
+PROTOCOL_LABEL = "OpenAI (/v1/chat/completions)"
+STREAM_BLOCK_LABEL = "OpenAI (流式)"
+NONSTREAM_BLOCK_LABEL = "OpenAI (非流式)"
+
+ESTIMATED_SAVED_TOKENS = 4096
+CONNECT_TIMEOUT_SECONDS = 15.0
+POOL_TIMEOUT_SECONDS = 15.0
 
 
 def normalize_openai_model(raw_model: str) -> str:
     """标准化模型名称，确保符合美团官方集群精确大小写区分 (LongCat-2.5-Preview)"""
     if not raw_model:
         return "LongCat-2.5-Preview"
-    m_lower = raw_model.lower().strip()
+    m_lower = str(raw_model).lower().strip()
     if m_lower in ("longcat-2.5-preview", "longcat-2.5", "default", "gpt-3.5-turbo", "gpt-4", "gpt-4o"):
         return "LongCat-2.5-Preview"
     if m_lower in ("longcat-2.0", "longcat-2"):
@@ -32,115 +58,172 @@ def normalize_openai_model(raw_model: str) -> str:
     return raw_model
 
 
-def auto_persist_key(api_key: str):
-    """自动将客户端传入的有效美团 API Key 持久化到 .env 文件中"""
-    if not api_key or not api_key.startswith("ak_"):
-        return
-    try:
-        env_path = Path(__file__).parent.parent.parent / ".env"
-        if not env_path.parent.exists():
-            env_path = Path("E:/桌面/longcat熔断插件/.env")
-        lines = []
-        if env_path.exists():
-            with open(env_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-        updated = False
-        new_lines = []
-        for line in lines:
-            if line.strip().startswith("LONGCAT_API_KEY="):
-                new_lines.append(f'LONGCAT_API_KEY="{api_key}"\n')
-                updated = True
-            else:
-                new_lines.append(line)
-        if not updated:
-            new_lines.append(f'LONGCAT_API_KEY="{api_key}"\n')
-        with open(env_path, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
-    except Exception:
-        pass
+async def _iter_lines_with_deadlines(
+    response: httpx.Response,
+    ttft_seconds: float,
+    idle_seconds: float,
+) -> AsyncGenerator[str, None]:
+    """Yields upstream SSE lines with independent first-token and idle budgets."""
+    iterator = response.aiter_lines()
+    budget = ttft_seconds
+    while True:
+        try:
+            line = await asyncio.wait_for(iterator.__anext__(), timeout=budget)
+        except StopAsyncIteration:
+            return
+        except asyncio.TimeoutError:
+            label = "首包(TTFT)" if budget == ttft_seconds else "相邻数据块"
+            raise TimeoutError(f"上游{label}超时 ({budget}s)")
+        budget = idle_seconds
+        yield line
 
 
 async def route_openai_completions(request: Request, config: GatewayConfig) -> Response:
-    body_bytes = await request.body()
-    body_json = json.loads(body_bytes.decode('utf-8')) if body_bytes else {}
-    is_streaming = body_json.get("stream", False)
+    limit = config.limits.max_request_body_bytes
 
-    # 1. 模型名称大小写归一化
+    declared = too_large_declared(request, limit)
+    if declared is not None:
+        return declared
+
+    body_bytes = await request.body()
+    if len(body_bytes) > limit:
+        return payload_too_large(limit)
+
+    body_json, error = parse_json_body(body_bytes)
+    if error is not None:
+        return error
+
+    is_streaming = bool(body_json.get("stream", False))
+
     raw_model = body_json.get("model", "LongCat-2.5-Preview")
     normalized_model = normalize_openai_model(raw_model)
     body_json["model"] = normalized_model
     body_bytes = json.dumps(body_json).encode("utf-8")
 
-    # 2. 凭证透传与自动记忆保存
-    client_auth = request.headers.get("authorization") or request.headers.get("x-api-key") or ""
-    client_token = client_auth.replace("Bearer ", "").replace("bearer ", "").strip()
-    upstream_key = config.upstream.api_key
-    if client_token.startswith("ak_"):
-        upstream_key = client_token
-        # 客户端首次传入真实美团 Key 时，网关自动写入配置并落盘保存
-        if not config.upstream.api_key or config.upstream.api_key != client_token:
-            config.upstream.api_key = client_token
-            os.environ["LONGCAT_API_KEY"] = client_token
-            auto_persist_key(client_token)
-    elif not upstream_key:
-        upstream_key = client_token
+    profile = resolve_profile(config)
 
-    # 记录接入请求 (总接管数 +1, 活跃流 +1)
-    metrics.record_request_start("OpenAI (/v1/chat/completions)", normalized_model)
+    if not metrics.acquire_stream(config.limits.max_active_streams):
+        return too_many_streams(config.limits.max_active_streams)
 
+    metrics.record_request_start(PROTOCOL_LABEL, normalized_model)
+
+    upstream_key = resolve_upstream_key(request, config)
     upstream_url = f"{config.upstream.base_url.rstrip('/')}/openai/v1/chat/completions"
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {upstream_key}"
+        "Authorization": f"Bearer {upstream_key}",
     }
 
-    client = httpx.AsyncClient(timeout=config.upstream.upstream_timeout_seconds)
+    client = httpx.AsyncClient(
+        timeout=httpx.Timeout(
+            connect=CONNECT_TIMEOUT_SECONDS,
+            read=config.timeouts.stream_idle_seconds,
+            write=config.upstream.upstream_timeout_seconds,
+            pool=POOL_TIMEOUT_SECONDS,
+        )
+    )
 
     # 非流式处理
     if not is_streaming:
         try:
-            resp = await client.post(upstream_url, content=body_bytes, headers=headers)
-            metrics.record_safe_completion("OpenAI (非流式)", normalized_model)
-            return Response(
-                content=resp.content,
-                status_code=resp.status_code,
-                media_type=resp.headers.get("content-type", "application/json")
+            resp = await asyncio.wait_for(
+                client.post(upstream_url, content=body_bytes, headers=headers),
+                timeout=config.upstream.upstream_timeout_seconds,
             )
+        except asyncio.TimeoutError:
+            metrics.record_upstream_error(NONSTREAM_BLOCK_LABEL, normalized_model, "timeout")
+            return bad_gateway("upstream timeout", "OpenAI")
+        except httpx.HTTPError as exc:
+            metrics.record_upstream_error(
+                NONSTREAM_BLOCK_LABEL, normalized_model, type(exc).__name__
+            )
+            return bad_gateway(type(exc).__name__, "OpenAI")
         finally:
-            metrics.record_stream_closed()
+            metrics.release_stream()
             await client.aclose()
 
-    # 流式处理：预建请求，检测上游状态码
+        if resp.status_code < 400:
+            metrics.record_safe_completion(NONSTREAM_BLOCK_LABEL, normalized_model)
+        else:
+            metrics.record_upstream_error(
+                NONSTREAM_BLOCK_LABEL, normalized_model, f"HTTP {resp.status_code}"
+            )
+
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type=resp.headers.get("content-type", "application/json"),
+        )
+
+    # 流式处理
     req = client.build_request("POST", upstream_url, content=body_bytes, headers=headers)
     try:
         upstream_resp = await client.send(req, stream=True)
-    except Exception as e:
-        metrics.record_stream_closed()
+    except httpx.HTTPError as exc:
+        metrics.record_upstream_error(
+            STREAM_BLOCK_LABEL, normalized_model, type(exc).__name__
+        )
+        metrics.release_stream()
         await client.aclose()
-        err_msg = json.dumps({"error": {"message": f"网关向上游转发失败: {str(e)}", "type": "gateway_upstream_error"}})
-        return Response(content=err_msg.encode("utf-8"), status_code=502, media_type="application/json")
+        return bad_gateway(type(exc).__name__, "OpenAI")
 
-    # 若上游直接返回 4xx/5xx 错误，立即返回对应错误码和 JSON，严禁误作为 SSE 流输出
-    if upstream_resp.status_code != 200:
-        metrics.record_stream_closed()
+    if upstream_resp.status_code >= 400:
         err_bytes = await upstream_resp.aread()
+        content_type = upstream_resp.headers.get("content-type", "application/json")
+        status_code = upstream_resp.status_code
         await upstream_resp.aclose()
         await client.aclose()
+        metrics.record_upstream_error(
+            STREAM_BLOCK_LABEL, normalized_model, f"HTTP {status_code}"
+        )
+        metrics.release_stream()
         return Response(
-            content=err_bytes,
-            status_code=upstream_resp.status_code,
-            media_type=upstream_resp.headers.get("content-type", "application/json")
+            content=err_bytes, status_code=status_code, media_type=content_type
         )
 
     async def sse_generator() -> AsyncGenerator[bytes, None]:
-        ring = RingBuffer()
-        scorer = LoopScorer()
+        ring = RingBuffer(capacity_bytes=config.limits.ring_buffer_bytes)
+        scorer = build_scorer(profile, config.immunity)
+        tool_guard = build_tool_guard(config, profile)
+        tracker = ParallelToolTracker(guard=tool_guard.guard)
+
         resp_id = "chatcmpl-sentinel"
+        think_chars = 0
         has_emitted_finish = False
         tripped = False
+        stream_finished_normally = False
+        trip_reason: Optional[str] = None
+        trip_tier = "READ_ONLY"
+
+        def fallback_finish_chunk() -> bytes:
+            payload = {
+                "id": resp_id,
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": normalized_model,
+                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            }
+            return f"data: {json.dumps(payload)}\n\n".encode("utf-8")
+
+        def finalize_tool_calls() -> Optional[tuple]:
+            """Finalizes every open tool call and returns the first violation found."""
+            for index in tracker.get_open_indices():
+                instance = tracker.finish_tool(index)
+                if instance is None:
+                    continue
+                violation, reason = tool_guard.inspect(
+                    instance.name, instance.arguments_buffer
+                )
+                if violation:
+                    return reason or violation, instance.safety_tier.value
+            return None
 
         try:
-            async for line in upstream_resp.aiter_lines():
+            async for line in _iter_lines_with_deadlines(
+                upstream_resp,
+                config.timeouts.time_to_first_token_seconds,
+                config.timeouts.stream_idle_seconds,
+            ):
                 if not line:
                     yield b"\n"
                     continue
@@ -148,74 +231,165 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                 if line.startswith("data: "):
                     raw_data = line[6:].strip()
                     if raw_data == "[DONE]":
+                        violation = finalize_tool_calls()
+                        if violation:
+                            tripped = True
+                            trip_reason, trip_tier = violation
                         if not has_emitted_finish and not tripped:
-                            # 补全保底 finish_reason: "stop"，防止 DSH 等客户端因缺少 finish_reason 报错
-                            fallback_finish = {
-                                "id": resp_id,
-                                "object": "chat.completion.chunk",
-                                "created": int(time.time()),
-                                "model": normalized_model,
-                                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
-                            }
-                            yield f"data: {json.dumps(fallback_finish)}\n\n".encode("utf-8")
+                            yield fallback_finish_chunk()
                             has_emitted_finish = True
+                        if tripped:
+                            metrics.record_circuit_trip(
+                                protocol=PROTOCOL_LABEL,
+                                model=normalized_model,
+                                reason=trip_reason or "",
+                                saved_tokens=ESTIMATED_SAVED_TOKENS,
+                                tool_tier=trip_tier,
+                            )
+                            for event in CompliantInjector.build_openai_interruption(
+                                response_id=resp_id,
+                                model=normalized_model,
+                                reason=trip_reason or "",
+                                injection_template=config.breaker.injection_template,
+                            ):
+                                yield event.encode("utf-8")
+                            break
+                        stream_finished_normally = True
                         yield b"data: [DONE]\n\n"
                         break
 
                     try:
                         chunk = json.loads(raw_data)
+                    except json.JSONDecodeError:
+                        chunk = None
+
+                    if isinstance(chunk, dict):
                         resp_id = chunk.get("id", resp_id)
-                        choices = chunk.get("choices", [])
+                        choices = chunk.get("choices") or []
                         if choices:
-                            choice0 = choices[0]
-                            if choice0.get("finish_reason"):
+                            choice0 = choices[0] or {}
+                            finish_reason = choice0.get("finish_reason")
+                            if finish_reason:
                                 has_emitted_finish = True
-
-                            delta = choice0.get("delta", {})
-                            # 兼容常规输出与 LongCat 2.5 思考链 (reasoning_content)
-                            text_content = delta.get("content", "") or delta.get("reasoning_content", "")
-                            if text_content:
-                                ring.write(text_content)
-                                is_loop, reason = scorer.check_text_repetition(ring.get_text())
-                                if is_loop:
+                                violation = finalize_tool_calls()
+                                if violation:
                                     tripped = True
-                                    # 毫秒级瞬时记录熔断事件，确保无论客户端何时断开大屏均已实时累加
-                                    metrics.record_circuit_trip(
-                                        protocol="OpenAI (/v1/chat/completions)",
-                                        model=normalized_model,
-                                        reason=reason,
-                                        saved_tokens=4096
-                                    )
-                                    events = CompliantInjector.build_openai_interruption(
-                                        response_id=resp_id,
-                                        model=normalized_model,
-                                        reason=reason
-                                    )
-                                    for e in events:
-                                        yield e.encode('utf-8')
-                                    has_emitted_finish = True
-                                    break
-                    except Exception:
-                        pass
+                                    trip_reason, trip_tier = violation
 
-                yield line.encode('utf-8') + b"\n"
+                            delta = choice0.get("delta") or {}
 
-            # 上游流正常结束若无 [DONE] 和 finish_reason，安全补齐
-            if not has_emitted_finish and not tripped:
-                fallback_finish = {
-                    "id": resp_id,
-                    "object": "chat.completion.chunk",
-                    "created": int(time.time()),
-                    "model": normalized_model,
-                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
-                }
-                yield f"data: {json.dumps(fallback_finish)}\n\n".encode("utf-8")
-                yield b"data: [DONE]\n\n"
+                            # 1) 流式工具调用增量
+                            tool_calls = delta.get("tool_calls") or []
+                            for position, tool_call in enumerate(tool_calls):
+                                if not isinstance(tool_call, dict):
+                                    continue
+                                call_index = int(tool_call.get("index", position))
+                                function = tool_call.get("function") or {}
+                                instance = tracker.get_or_start(
+                                    call_index,
+                                    str(tool_call.get("id", "") or ""),
+                                    str(function.get("name", "") or ""),
+                                )
+                                arguments_delta = function.get("arguments")
+                                if arguments_delta:
+                                    instance.append_arguments(str(arguments_delta))
 
+                            # 2) 文本与思考链增量
+                            if not tripped:
+                                content = delta.get("content")
+                                reasoning = delta.get("reasoning_content")
+                                if not isinstance(content, str):
+                                    content = ""
+                                if not isinstance(reasoning, str):
+                                    reasoning = ""
+
+                                if reasoning:
+                                    think_chars += len(reasoning)
+                                    if (
+                                        profile.think_loop_enabled
+                                        and think_chars > profile.max_think_chars
+                                    ):
+                                        tripped = True
+                                        trip_reason = (
+                                            f"思考链超长 ({think_chars} > "
+                                            f"{profile.max_think_chars} chars)"
+                                        )
+                                        trip_tier = "READ_ONLY"
+
+                                if content and not tripped:
+                                    ring.write(content)
+                                    is_loop, reason = scorer.feed(content)
+                                    if is_loop:
+                                        tripped = True
+                                        trip_reason = reason
+                                        trip_tier = "READ_ONLY"
+
+                                if (
+                                    reasoning
+                                    and not tripped
+                                    and profile.think_loop_enabled
+                                ):
+                                    ring.write(reasoning)
+                                    is_loop, reason = scorer.feed(reasoning)
+                                    if is_loop:
+                                        tripped = True
+                                        trip_reason = reason
+                                        trip_tier = "READ_ONLY"
+
+                        if tripped:
+                            metrics.record_circuit_trip(
+                                protocol=PROTOCOL_LABEL,
+                                model=normalized_model,
+                                reason=trip_reason or "",
+                                saved_tokens=ESTIMATED_SAVED_TOKENS,
+                                tool_tier=trip_tier,
+                            )
+                            for event in CompliantInjector.build_openai_interruption(
+                                response_id=resp_id,
+                                model=normalized_model,
+                                reason=trip_reason or "",
+                                injection_template=config.breaker.injection_template,
+                            ):
+                                yield event.encode("utf-8")
+                            break
+
+                yield line.encode("utf-8") + b"\n"
+            else:
+                violation = finalize_tool_calls()
+                if violation and not tripped:
+                    tripped = True
+                    trip_reason, trip_tier = violation
+                    metrics.record_circuit_trip(
+                        protocol=PROTOCOL_LABEL,
+                        model=normalized_model,
+                        reason=trip_reason or "",
+                        saved_tokens=ESTIMATED_SAVED_TOKENS,
+                        tool_tier=trip_tier,
+                    )
+                    for event in CompliantInjector.build_openai_interruption(
+                        response_id=resp_id,
+                        model=normalized_model,
+                        reason=trip_reason or "",
+                        injection_template=config.breaker.injection_template,
+                    ):
+                        yield event.encode("utf-8")
+                elif not has_emitted_finish and not tripped:
+                    stream_finished_normally = True
+                    yield fallback_finish_chunk()
+                    yield b"data: [DONE]\n\n"
+                else:
+                    stream_finished_normally = not tripped
+
+        except TimeoutError as exc:
+            metrics.record_upstream_error(STREAM_BLOCK_LABEL, normalized_model, str(exc))
+        except httpx.HTTPError as exc:
+            metrics.record_upstream_error(
+                STREAM_BLOCK_LABEL, normalized_model, type(exc).__name__
+            )
         finally:
-            if not tripped:
-                metrics.record_safe_completion("OpenAI (流式)", normalized_model)
-            metrics.record_stream_closed()
+            if stream_finished_normally and not tripped:
+                metrics.record_safe_completion(STREAM_BLOCK_LABEL, normalized_model)
+            metrics.release_stream()
             await upstream_resp.aclose()
             await client.aclose()
 
@@ -225,6 +399,6 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
+            "X-Accel-Buffering": "no",
+        },
     )

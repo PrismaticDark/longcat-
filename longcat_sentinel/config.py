@@ -27,7 +27,7 @@ class ConfigurationError(Exception):
     pass
 
 
-# Disallowed weak/placeholder tokens in production
+# Disallowed weak/placeholder tokens in production (exact-match, case-insensitive)
 FORBIDDEN_PLAINTEXT_TOKENS = {
     "sk-longcat-placeholder",
     "sk-placeholder",
@@ -45,8 +45,72 @@ FORBIDDEN_PLAINTEXT_TOKENS = {
     "null",
 }
 
+# Credentials that shipped as defaults in earlier releases. They are public knowledge
+# and must NEVER be accepted, no matter how they were supplied.
+KNOWN_WEAK_DEFAULTS = {
+    "sk-ant-sentinel-gw-8f7a6b5c4d3e2f1a",
+    "adm-sentinel-99e8d7c6b5a4",
+    "sk-meituan-longcat-demo-key",
+    "sk-meituan-your-real-key-here",
+    "sk-meituan-your-real-key",
+}
+
+# Substrings that always indicate a placeholder / documentation value
+WEAK_TOKEN_SUBSTRINGS = (
+    "placeholder",
+    "your-real-key",
+    "your-key-here",
+    "changeme",
+    "demo-key",
+    "example",
+    "sample",
+    "xxxxxxxx",
+    "aaaaaaa",
+)
+
+MIN_TOKEN_LENGTH = 32
+MIN_TOKEN_UNIQUE_CHARS = 8
+
+
+def check_token_strength(token: Optional[str], label: str = "token") -> Optional[str]:
+    """
+    Returns a human-readable rejection reason when the token is weak, or None when it
+    is acceptable. Used for gateway/admin credentials in production mode.
+    """
+    if token is None or not str(token).strip():
+        return f"{label} is empty or whitespace-only"
+
+    value = str(token).strip()
+
+    if value in KNOWN_WEAK_DEFAULTS:
+        return (
+            f"{label} is a well-known default credential shipped by an earlier release; "
+            "it is public knowledge and strictly forbidden"
+        )
+
+    lowered = value.lower()
+    if lowered in FORBIDDEN_PLAINTEXT_TOKENS:
+        return f"{label} is a weak or placeholder value ('{value}')"
+    for needle in WEAK_TOKEN_SUBSTRINGS:
+        if needle in lowered:
+            return f"{label} contains the placeholder marker '{needle}'"
+
+    if len(value) < MIN_TOKEN_LENGTH:
+        return (
+            f"{label} is too short ({len(value)} chars); at least "
+            f"{MIN_TOKEN_LENGTH} characters of high-entropy secret are required"
+        )
+    if len(set(value)) < MIN_TOKEN_UNIQUE_CHARS:
+        return f"{label} has too few distinct characters to be high-entropy"
+
+    return None
+
 ENV_VAR_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
+
+# Credentials that must always come from the real environment, never from a
+# plaintext default embedded in config.yaml.
+SENSITIVE_ENV_VARS = frozenset({"SENTINEL_GATEWAY_TOKEN"})
 
 
 def validate_tls_startup(
@@ -120,18 +184,36 @@ def interpolate_env_vars(raw: Any, dev_mode: bool = False) -> Any:
             if val is not None:
                 # Check for whitespace-only token
                 if val.strip() == "":
-                    if var_name in ("SENTINEL_GATEWAY_TOKEN", "SENTINEL_ADMIN_TOKEN"):
+                    if var_name in SENSITIVE_ENV_VARS:
                         raise ConfigurationError(
                             f"FATAL: Environment variable '${var_name}' is empty or whitespace-only! "
                             "Valid security tokens must be configured."
                         )
                 return val
 
+            # An explicitly empty default (${VAR:-}) for sensitive security credentials is a configuration error.
+            if default_val is not None and default_val.strip() == "":
+                if var_name in SENSITIVE_ENV_VARS:
+                    raise ConfigurationError(
+                        f"FATAL: Sensitive environment variable '${var_name}' cannot have an empty default; "
+                        "provide a real value."
+                    )
+                return ""
+
             # Dev mode ephemeral token generation
-            if dev_mode and var_name in ("SENTINEL_GATEWAY_TOKEN", "SENTINEL_ADMIN_TOKEN"):
+            if dev_mode and var_name in SENSITIVE_ENV_VARS:
                 ephemeral = f"dev-{var_name.lower().replace('_', '-')}-{secrets.token_urlsafe(32)}"
                 os.environ[var_name] = ephemeral
                 return ephemeral
+
+            # Security credentials must never be satisfied by a plaintext default baked
+            # into the configuration file: doing so would ship a public secret.
+            if var_name in SENSITIVE_ENV_VARS:
+                raise ConfigurationError(
+                    f"FATAL: Required security environment variable '${var_name}' is not set. "
+                    "Plaintext defaults for gateway/admin credentials are strictly prohibited; "
+                    "export the variable with a high-entropy secret."
+                )
 
             if default_val is not None:
                 return default_val
@@ -192,7 +274,7 @@ LimitsConfig = LimitConfig
 
 class SecurityConfig(BaseModel):
     deep_redaction_scope: str = Field(default="logs_and_metrics_only")
-    require_custom_admin_header: bool = Field(default=True)
+    enable_api_docs: bool = Field(default=False)
     allowed_loopback_regex: str = Field(
         default=r"^https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$"
     )
@@ -278,30 +360,43 @@ class GatewayConfig(BaseModel):
                     "FATAL: No gateway tokens configured! SENTINEL_GATEWAY_TOKEN must be set."
                 )
 
-            for tok in self.auth.gateway_tokens:
-                if not tok or tok.strip() == "":
+            for index, tok in enumerate(self.auth.gateway_tokens):
+                reason = check_token_strength(tok, f"gateway_tokens[{index}]")
+                if reason is not None:
+                    # Never echo the secret itself into the error message.
                     raise ConfigurationError(
-                        "FATAL: Gateway token is empty or whitespace-only! "
-                        "Valid security tokens must be configured."
-                    )
-                tok_clean = tok.strip().lower()
-                if tok_clean in FORBIDDEN_PLAINTEXT_TOKENS or "placeholder" in tok_clean:
-                    raise ConfigurationError(
-                        f"FATAL: Insecure weak or placeholder token detected: '{tok}' is prohibited in production! "
-                        "Plaintext tokens or weak defaults are strictly prohibited."
+                        f"FATAL: Insecure gateway token rejected: {reason}. "
+                        "Plaintext tokens or weak defaults are strictly prohibited in production."
                     )
 
-            admin_tok = self.auth.dashboard_admin_token
-            if not admin_tok or admin_tok.strip() == "":
+            admin_val = (self.auth.dashboard_admin_token or "").strip()
+            if admin_val:
+                admin_reason = check_token_strength(admin_val, "dashboard_admin_token")
+                if admin_reason is not None:
+                    raise ConfigurationError(
+                        f"FATAL: Insecure admin token rejected: {admin_reason}. "
+                        "SENTINEL_ADMIN_TOKEN must be a high-entropy secret if configured."
+                    )
+                for index, gateway_token in enumerate(self.auth.gateway_tokens):
+                    if gateway_token.strip() == admin_val:
+                        raise ConfigurationError(
+                            "FATAL: dashboard_admin_token must differ from every gateway token "
+                            f"(collides with gateway_tokens[{index}])."
+                        )
+
+            upstream_key = (self.upstream.api_key or "").strip()
+            if not upstream_key:
                 raise ConfigurationError(
-                    "FATAL: Admin token is missing or empty! "
-                    "SENTINEL_ADMIN_TOKEN must be set to a high-entropy secret in production."
+                    "FATAL: Upstream api_key is missing! LONGCAT_API_KEY must be set."
                 )
-            admin_clean = admin_tok.strip().lower()
-            if admin_clean in FORBIDDEN_PLAINTEXT_TOKENS or "placeholder" in admin_clean:
+            upstream_lower = upstream_key.lower()
+            if upstream_key in KNOWN_WEAK_DEFAULTS or any(
+                needle in upstream_lower
+                for needle in ("placeholder", "your-real-key", "your-key-here", "demo-key")
+            ):
                 raise ConfigurationError(
-                    f"FATAL: Insecure weak or placeholder token detected: '{admin_tok}' is prohibited in production! "
-                    "SENTINEL_ADMIN_TOKEN must be set to a high-entropy secret."
+                    "FATAL: Upstream api_key is a placeholder or well-known demo value; "
+                    "configure a real LONGCAT_API_KEY."
                 )
 
         return self
@@ -321,10 +416,11 @@ def load_config(path: Union[str, Path] = "config.yaml", dev_mode: bool = False) 
             exe_dir = Path(sys.executable).parent
             bundle_dir = Path(getattr(sys, "_MEIPASS", exe_dir))
             candidates.extend([exe_dir / path, bundle_dir / path])
+        # Prefer the packaged/project location over the current working directory so
+        # an unrelated config.yaml elsewhere can never be picked up silently.
         candidates.extend([
-            Path.cwd() / path,
             Path(__file__).parent.parent / path,
-            Path("E:/桌面/longcat熔断插件") / path
+            Path.cwd() / path,
         ])
         found = False
         for c in candidates:
@@ -333,7 +429,10 @@ def load_config(path: Union[str, Path] = "config.yaml", dev_mode: bool = False) 
                 found = True
                 break
         if not found:
-            raise ConfigurationError(f"FATAL: Configuration file not found at: {config_path.resolve()}")
+            attempted = ", ".join(str(c) for c in candidates)
+            raise ConfigurationError(
+                f"FATAL: Configuration file '{path}' not found. Searched: {attempted}"
+            )
     elif not config_path.exists():
         raise ConfigurationError(f"FATAL: Configuration file not found at: {config_path.resolve()}")
 

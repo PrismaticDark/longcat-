@@ -10,9 +10,8 @@ Payload streams must be passed through 100% byte-exact and unmodified.
 
 from __future__ import annotations
 
-import copy
 import re
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Optional
 
 # Regex patterns for sensitive credentials
 RE_PEM_PRIVATE_KEY = re.compile(

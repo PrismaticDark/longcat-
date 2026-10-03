@@ -1,5 +1,7 @@
 # ==============================================================================
-# LongCat Sentinel v2.3 Enterprise Final Hardened Edition Dependencies
+# LongCat Sentinel v2.3.1 Security Hardened Edition Dependencies
+#
+# 仅列出源码实际导入的第三方库；未使用的依赖已移除。
 # ==============================================================================
 
 # Core ASGI & HTTP Engine
@@ -10,21 +12,13 @@ starlette>=0.36.0
 
 # Configuration & Data Validation (Pydantic v2)
 pydantic>=2.6.0
-pydantic-settings>=2.2.0
 PyYAML>=6.0.1
 python-dotenv>=1.0.0
 
-# Terminal UI & String Similarity
+# Terminal UI & Fuzzy String Similarity (LoopScorer 模糊复读检测；
+# 缺少 rapidfuzz 时自动回退到标准库 difflib)
 rich>=13.7.0
 rapidfuzz>=3.6.0
 
-# Streaming Protocols & WebSockets
-sse-starlette>=2.0.0
-websockets>=12.0
-
-# System Monitoring & Resource Testing (Memory footprint verification)
-psutil>=5.9.0
-
-# Automated Testing Framework (Milestone 1-6 Acceptance Suite)
+# Optional: pytest 支持（测试套件本身仅依赖标准库 unittest）
 pytest>=8.0.0
-pytest-asyncio>=0.23.0
