@@ -40,13 +40,11 @@ _SELF_LOOP_PATTERNS = [
     re.compile(r"\bstuck\s+in\s+a\s+loop\b", re.IGNORECASE),
     re.compile(r"\bcompletely\s+different\s+approach\b", re.IGNORECASE),
     re.compile(r"\breconsider\s+the\s+problem\b", re.IGNORECASE),
-    re.compile(r"\banother\s+idea\b", re.IGNORECASE),
     re.compile(r"\btake\s+a\s+concrete\s+action\b", re.IGNORECASE),
-    re.compile(r"陷入死循环"),
-    re.compile(r"换个思路"),
-    re.compile(r"重新审视"),
-    re.compile(r"停止循环"),
-    re.compile(r"死循环"),
+    re.compile(r"(?:陷入(?:了)?死循环|自己在打转|一直在死循环)"),
+    re.compile(r"(?:让我换个思路|换个思路尝试|必须换个思路)"),
+    re.compile(r"(?:重新审视(?:这个问题|整体思路)|重新审视自己的方案)"),
+    re.compile(r"(?:停止(?:这个)?循环|不能再循环下去)"),
 ]
 
 
@@ -76,6 +74,9 @@ class LoopScorer:
         longcat_second_guessing_threshold: int = 3,
         longcat_constraint_threshold: int = 5,
         longcat_min_reasoning_chars: int = 800,
+        longcat_memory_search_threshold: int = 6,
+        longcat_hesitation_threshold: int = 5,
+        longcat_standalone_hesitation_threshold: int = 6,
     ):
         self.min_period = max(1, int(min_period))
         self.repeat_threshold = max(2, int(repeat_threshold))
@@ -101,6 +102,9 @@ class LoopScorer:
             second_guessing_threshold=longcat_second_guessing_threshold,
             constraint_threshold=longcat_constraint_threshold,
             min_reasoning_chars=longcat_min_reasoning_chars,
+            memory_search_threshold=longcat_memory_search_threshold,
+            hesitation_threshold=longcat_hesitation_threshold,
+            standalone_hesitation_threshold=longcat_standalone_hesitation_threshold,
         )
 
         self.last_tool_outputs: List[str] = []
@@ -255,11 +259,17 @@ class LoopScorer:
             return False, None
 
         # 1. 相同长段落高频复现检测
+        # 若处于代码块内部（未闭合三反引号）或通过单换行切分，则提高重复容忍门槛防止代码模板/表格误杀
+        is_in_code = (text.count("```") % 2 != 0)
+        effective_repeat_threshold = self.block_repeat_threshold
+        if is_in_code:
+            effective_repeat_threshold = max(effective_repeat_threshold + 1, int(effective_repeat_threshold * self.code_block_multiplier))
+
         seen: dict[str, int] = {}
         for p in raw_paras:
             clean = self._normalize(p).lower().strip()
             seen[clean] = seen.get(clean, 0) + 1
-            if seen[clean] >= self.block_repeat_threshold:
+            if seen[clean] >= effective_repeat_threshold:
                 sample = p[:50].replace("\n", " ").strip()
                 return True, (
                     f"Macro block repeat ({seen[clean]}x of len {len(p)}): "

@@ -440,6 +440,20 @@ class TestToolLoopGuard(unittest.TestCase):
             seen.append(violation)
         self.assertIn("tool_cycle", seen)
 
+    def test_distinct_sessions_do_not_interfere(self):
+        """测试不同会话实例相互独立，杜绝跨会话串扰误杀 (如 sessionA/B/C 各跑一次 git status)"""
+        guard_a = ToolLoopGuard(guard=CapabilityGuard(), max_duplicate_calls=3)
+        guard_b = ToolLoopGuard(guard=CapabilityGuard(), max_duplicate_calls=3)
+        guard_c = ToolLoopGuard(guard=CapabilityGuard(), max_duplicate_calls=3)
+
+        v_a, _ = guard_a.inspect("pwsh", {"command": "git status"})
+        v_b, _ = guard_b.inspect("pwsh", {"command": "git status"})
+        v_c, _ = guard_c.inspect("pwsh", {"command": "git status"})
+
+        self.assertIsNone(v_a)
+        self.assertIsNone(v_b)
+        self.assertIsNone(v_c, "Cross-session interference detected: session-C was tripped by session-A and session-B!")
+
 
 class TestClosingSuffix(unittest.TestCase):
     """TC-UNIT-400: truncated tool JSON can be completed into valid JSON."""
@@ -645,10 +659,36 @@ class TestMacroBlockAndSelfLoopDetection(unittest.TestCase):
 
     def test_self_loop_heuristics_chinese(self):
         scorer = LoopScorer(self_loop_heuristics_enabled=True, self_loop_threshold=3)
-        text = "模型正在推理... 好像陷入死循环了。让我换个思路尝试。必须停止循环并重新审视。"
+        text = "模型正在推理... 好像陷入了死循环。让我换个思路尝试。必须重新审视整体思路。"
         is_loop, reason = scorer.check_text_repetition(text)
         self.assertTrue(is_loop)
         self.assertIn("Thinking loop self-acknowledgment detected", reason)
+
+    def test_topic_discussion_about_deadlocks_does_not_trip(self):
+        """测试正常讨论死循环成因或架构分析不会因裸词被误杀"""
+        scorer = LoopScorer(self_loop_heuristics_enabled=True, self_loop_threshold=3)
+        text = (
+            "用户让我分析这段代码的死循环成因。\n\n"
+            "在操作系统中，死循环通常由未满足的退出条件引发。\n\n"
+            "我们建议排查循环变量递增逻辑，从而彻底解决死循环问题。"
+        )
+        is_loop, reason = scorer.check_text_repetition(text)
+        self.assertFalse(is_loop, f"False positive on topic discussion: {reason}")
+
+    def test_code_block_macro_repeat_immunity(self):
+        """测试代码块内的相似逻辑不会因 2 次出现就被 macro block 误杀"""
+        scorer = LoopScorer(block_loop_enabled=True, block_repeat_threshold=2, min_block_chars=25, code_block_multiplier=1.5)
+        code_block = (
+            "```python\n"
+            "def handle_first():\n"
+            "    if not response.ok:\n"
+            "        raise ValueError('Invalid status received')\n\n"
+            "def handle_second():\n"
+            "    if not response.ok:\n"
+            "        raise ValueError('Invalid status received')\n"
+        )
+        is_loop, reason = scorer.check_text_repetition(code_block)
+        self.assertFalse(is_loop, f"False positive in code block repeat: {reason}")
 
     def test_widened_max_period_catches_large_period_cycle(self):
         scorer = LoopScorer(max_period=2000, repeat_threshold=2, block_loop_enabled=False, self_loop_heuristics_enabled=False)
@@ -674,14 +714,26 @@ class TestSemanticToolSkeletonGuard(unittest.TestCase):
         ToolLoopGuard.reset()
 
     def test_search_file_variations_trip_skeleton_guard(self):
-        cmd1 = 'python -c "import os; [print(f) for f in fn if f.endswith(\'.tflite\')]" 2>$null'
+        cmd1 = 'python -c "import os; [print(f) for f in fn if \'hand\' in f.lower()]" 2>$null'
         v1, _ = self.guard.inspect("pwsh", {"command": cmd1})
         self.assertIsNone(v1)
 
-        cmd2 = 'python -c "import os; [print(f) for f in fn if f.endswith(\'.binarypb\')]" 2>&1 | Select-Object -First 10'
+        cmd2 = 'python -c "import os; [print(f) for f in fn if \'hand\' in f.lower()]" 2>&1 | Select-Object -First 10'
         v2, reason = self.guard.inspect("pwsh", {"command": cmd2})
         self.assertEqual(v2, "tool_loop")
         self.assertIn("Repeated semantic tool call", reason)
+
+    def test_distinct_search_file_filters_do_not_trip(self):
+        """测试不同文件后缀探索不会被骨架归一化误判"""
+        cmd1 = 'Get-ChildItem -Filter "*.task"'
+        cmd2 = 'Get-ChildItem -Filter "*.tflite"'
+        cmd3 = 'Get-ChildItem -Filter "*.pb"'
+        v1, _ = self.guard.inspect("pwsh", {"command": cmd1})
+        v2, _ = self.guard.inspect("pwsh", {"command": cmd2})
+        v3, _ = self.guard.inspect("pwsh", {"command": cmd3})
+        self.assertIsNone(v1)
+        self.assertIsNone(v2)
+        self.assertIsNone(v3)
 
     def test_distinct_tools_and_commands_do_not_trip(self):
         v1, _ = self.guard.inspect("pwsh", {"command": "git status"})
@@ -819,6 +871,43 @@ class TestLongCatReasoningGuard(unittest.TestCase):
         for i in range(0, len(text), 40):
             h, r = guard.feed(text[i:i+40])
             self.assertFalse(h, f"Streaming feed false positive at {i}: {r}")
+
+    def test_standalone_hesitation_trips_without_release_notes_keywords(self):
+        """测试纯犹疑单边信号：模型在 .task 清单/包名中徘徊打转，完全没有 release notes 词汇也能及时熔断"""
+        guard = LongCatReasoningGuard(
+            min_reasoning_chars=200,
+            standalone_hesitation_threshold=5,
+        )
+        paragraphs = [
+            "Let me check the exact task file list in the directory.",
+            "Wait, actually is it hand_landmarker.task or gesture_recognizer.task?",
+            "Hmm, wait, what if the model file is inside the assets subfolder?",
+            "Actually, wait, maybe I should check the PyPI package mediapipe first.",
+            "Hold on, wait, let me check the package name again.",
+            "Wait, actually what if the task file is named hand_landmarker_cpu.task?",
+        ]
+        text = "\n\n".join(paragraphs)
+        is_loop, reason = guard.inspect(text)
+        self.assertTrue(is_loop)
+        self.assertIn("Cognitive Hesitation Stalling Loop", reason)
+
+    def test_generalized_memory_retrieval_trips(self):
+        """测试泛化后的知识/记忆反刍模式触发"""
+        guard = LongCatReasoningGuard(
+            min_reasoning_chars=150,
+            memory_search_threshold=3,
+            hesitation_threshold=2,
+        )
+        paragraphs = [
+            "Let me check my memory for the package name.",
+            "Wait, actually let me recall the exact file list.",
+            "Searching my memory to re-verify the name.",
+            "Actually, wait, what was the exact name?",
+        ]
+        text = "\n\n".join(paragraphs)
+        is_loop, reason = guard.inspect(text)
+        self.assertTrue(is_loop)
+        self.assertIn("Memory Retrieval & Deliberation Loop", reason)
 
 
 if __name__ == "__main__":

@@ -73,11 +73,8 @@ def normalize_tool_skeleton(tool_name: str, arguments: Any) -> str:
     c = re.sub(r"print\([a-zA-Z0-9_.]+\);\s*", "", c)
     # 消除目录遍历中文件过滤表达式变动 (如 for f in fn if 'hand' vs f.endswith(...))
     c = re.sub(r"for\s+f\s+in\s+fn\s+if\s+.*\]", "for f in fn if <FILTER_EXPR>]", c)
-    # 消除通用文件搜索后缀变动（如 .tflite / .task / .pb / .binarypb / hand）
-    c = re.sub(r"f\.endswith\([^)]+\)", "<FILE_FILTER>", c)
+    # 消除调试筛选关键字变动 (保留具体的后缀名区分，仅折叠通用标记)
     c = re.sub(r"['\"][^'\"]*hand[^'\"]*['\"]\s+in\s+f\.lower\(\)", "<SEARCH_FILTER>", c)
-    c = re.sub(r"-(filter|include|name)\s+['\"][^'\"]+['\"]", "-\\1 <FILTER>", c)
-    c = re.sub(r"(<FILE_FILTER>|\s+or\s+)+", "<FILTER_EXPR>", c)
     c = re.sub(r"\s+", " ", c).strip()
     return f"{t_lower}:{c}"
 
@@ -103,9 +100,8 @@ class ToolLoopGuard:
       * None          - safe to continue
     """
 
-    _lock = threading.Lock()
-    _ledger: Deque[Tuple[float, str]] = deque(maxlen=MAX_LEDGER_ENTRIES)
-    _skeleton_ledger: Deque[Tuple[float, str, str]] = deque(maxlen=MAX_LEDGER_ENTRIES)
+    _active_instances: list[ToolLoopGuard] = []
+    _instances_lock = threading.Lock()
 
     def __init__(
         self,
@@ -127,28 +123,41 @@ class ToolLoopGuard:
         self.tool_skeleton_enabled = bool(tool_skeleton_enabled)
         self.max_duplicate_skeleton_calls = max(2, int(max_duplicate_skeleton_calls))
 
+        self._lock = threading.Lock()
+        self._ledger: Deque[Tuple[float, str]] = deque(maxlen=MAX_LEDGER_ENTRIES)
+        self._skeleton_ledger: Deque[Tuple[float, str, str]] = deque(maxlen=MAX_LEDGER_ENTRIES)
+
+        with ToolLoopGuard._instances_lock:
+            ToolLoopGuard._active_instances.append(self)
+
     # -- ledger helpers -------------------------------------------------------
-    @classmethod
-    def _prune(cls, now: float, ttl: float) -> None:
-        while cls._ledger and (now - cls._ledger[0][0]) > ttl:
-            cls._ledger.popleft()
-        while cls._skeleton_ledger and (now - cls._skeleton_ledger[0][0]) > ttl:
-            cls._skeleton_ledger.popleft()
+    def _prune(self, now: float, ttl: float) -> None:
+        while self._ledger and (now - self._ledger[0][0]) > ttl:
+            self._ledger.popleft()
+        while self._skeleton_ledger and (now - self._skeleton_ledger[0][0]) > ttl:
+            self._skeleton_ledger.popleft()
 
-    @classmethod
-    def _recent_signatures(cls, limit: int) -> list:
-        return [signature for _, signature in list(cls._ledger)[-limit:]]
+    def _recent_signatures(self, limit: int) -> list:
+        return [signature for _, signature in list(self._ledger)[-limit:]]
 
-    @classmethod
-    def _recent_skeletons(cls, limit: int) -> list:
-        return [signature for _, signature, _ in list(cls._skeleton_ledger)[-limit:]]
+    def _recent_skeletons(self, limit: int) -> list:
+        return [signature for _, signature, _ in list(self._skeleton_ledger)[-limit:]]
 
     @classmethod
     def reset(cls) -> None:
-        """Clears process-wide state; used by tests and by the admin API."""
-        with cls._lock:
-            cls._ledger.clear()
-            cls._skeleton_ledger.clear()
+        """Clears state across all active instances; used by tests and by the admin API."""
+        with cls._instances_lock:
+            for inst in cls._active_instances:
+                with inst._lock:
+                    inst._ledger.clear()
+                    inst._skeleton_ledger.clear()
+            cls._active_instances.clear()
+
+    def reset_instance(self) -> None:
+        """Clears state for this instance specifically."""
+        with self._lock:
+            self._ledger.clear()
+            self._skeleton_ledger.clear()
 
     # -- inspection -----------------------------------------------------------
     def inspect(self, tool_name: str, arguments: Any) -> Tuple[Optional[str], Optional[str]]:

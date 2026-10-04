@@ -84,6 +84,9 @@ def build_scorer(profile: ProfileConfig, immunity=None) -> LoopScorer:
         longcat_second_guessing_threshold=profile.longcat_second_guessing_threshold,
         longcat_constraint_threshold=profile.longcat_constraint_threshold,
         longcat_min_reasoning_chars=profile.longcat_min_reasoning_chars,
+        longcat_memory_search_threshold=profile.longcat_memory_search_threshold,
+        longcat_hesitation_threshold=profile.longcat_hesitation_threshold,
+        longcat_standalone_hesitation_threshold=profile.longcat_standalone_hesitation_threshold,
         code_block_multiplier=(
             immunity.code_block_multiplier if immunity is not None else 1.5
         ),

@@ -89,6 +89,9 @@ profiles:
     longcat_second_guessing_threshold: 3  # 自我怀疑推翻打断阈值 (3 次即熔断)
     longcat_constraint_threshold: 5       # 冲突约束偏执咀嚼阈值
     longcat_min_reasoning_chars: 3500     # 思考链累积最小激活门槛 (低于 3500 字符 100% 豁免防误杀)
+    longcat_memory_search_threshold: 6    # 脑内虚构检索/知识反刍阈值
+    longcat_hesitation_threshold: 5       # 犹疑打断协同阈值 (与记忆检索复合)
+    longcat_standalone_hesitation_threshold: 6 # 独立犹疑单边信号打断阈值 (无需硬绑定特定检索词)
 
   # 2. 极度激进模式（极致 Token 节约，秒级掐断死循环）
   ultra_aggressive:

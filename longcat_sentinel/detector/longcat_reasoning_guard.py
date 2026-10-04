@@ -73,26 +73,35 @@ _ABANDONMENT_PATTERNS = [
     ),
 ]
 
-# 虚假记忆检索与认知反思自旋模式 (Memory Retrieval & Deliberation Stalling)
+# 虚假记忆检索、知识反刍与认知打转自旋模式 (Memory Retrieval & Cognitive Deliberation Stalling)
 _MEMORY_SEARCH_PATTERNS = [
     re.compile(
         r"\b(?:let\s+me\s+recall|recall\s+harder|searching\s+(?:my\s+)?memory|"
         r"in\s+memory|release\s+notes|changelog|actually,\s*i\s+recall|"
         r"i\s+remember\s+now|let\s+me\s+recall\s+the\s+actual|found\s+it\s+in\s+memory|"
-        r"recall\s+that|recall\s+more\s+specifically|i\s+recall|i\s+now\s+recall)\b",
+        r"recall\s+that|recall\s+more\s+specifically|i\s+recall|i\s+now\s+recall|"
+        r"let\s+me\s+check\s+my\s+memory|re-check\s+the\s+package|package\s+name|"
+        r"file\s+list|version\s+history|re-verif(?:y|ying)\s+the\s+name|"
+        r"what\s+was\s+the\s+exact|check\s+the\s+exact\s+name)\b",
         re.IGNORECASE,
     ),
-    re.compile(r"(?:回想|检索记忆|发版日志|更新日志|重新回忆|仔细回想|记忆中)", re.IGNORECASE),
+    re.compile(
+        r"(?:回想|检索记忆|发版日志|更新日志|重新回忆|仔细回想|记忆中|确认包名|清单列表|重新确认|仔细核对)",
+        re.IGNORECASE,
+    ),
 ]
 
-# 犹疑停滞打断
+# 犹疑停滞打断与自我纠结特征 (Hesitation & Self-Interruption Patterns)
 _HESITATION_PATTERNS = [
     re.compile(
-        r"\b(?:wait,\s*(?:actually|but|let\s+me)|actually,\s*(?:wait|i\s+recall)|"
-        r"hmm,\s*(?:but|wait)|hold\s+on)\b",
+        r"\b(?:wait,\s*(?:actually|but|let\s+me|is\s+it|maybe|what\s+if)|"
+        r"actually,\s*(?:wait|i\s+recall|maybe|is\s+that|let\s+me)|"
+        r"hmm,\s*(?:but|wait|is\s+that|maybe)|"
+        r"hold\s+on,\s*(?:wait|is\s+it|let\s+me)?|"
+        r"wait\s+a\s+moment|or\s+wait|wait\s+wait)\b",
         re.IGNORECASE,
     ),
-    re.compile(r"(?:等等，其实|不过等等|等一下|仔细一想)", re.IGNORECASE),
+    re.compile(r"(?:等等，其实|不过等等|等一下|仔细一想|不对，等等|等等，难道|或者等等)", re.IGNORECASE),
 ]
 
 # 思考链自认陷入死循环特征
@@ -109,9 +118,11 @@ class LongCatReasoningGuard:
     """
     美团 LongCat 专属递归推理与认知自旋守卫 (v2.5 深度特化版).
     
-    能够识别两大核心死锁形态：
+    能够识别核心死锁形态：
     1. 方案推翻打转 (Plan Churn & Abandonment): 方案反复废弃并在千字跨度内犹疑徘徊；
-    2. 记忆自旋死锁 (Memory Deliberation Loop): 在版本特性/release notes 上反复脑内虚构检索未采取行动。
+    2. 认知停滞死锁 (Cognitive Stalling & Deliberation Loop):
+       - 纯高频犹疑打断自旋 (Hesitation Loop: 干净单边信号，多次犹疑纠结未落地行动);
+       - 知识/记忆反刍检索与犹疑交织自旋 (Memory Deliberation Loop).
     """
 
     def __init__(
@@ -123,6 +134,7 @@ class LongCatReasoningGuard:
         min_reasoning_chars: int = 3500,
         memory_search_threshold: int = 6,
         hesitation_threshold: int = 5,
+        standalone_hesitation_threshold: int = 6,
     ):
         self.enabled = bool(enabled)
         self.plan_churn_threshold = max(2, int(plan_churn_threshold))
@@ -131,6 +143,7 @@ class LongCatReasoningGuard:
         self.min_reasoning_chars = max(100, int(min_reasoning_chars))
         self.memory_search_threshold = max(3, int(memory_search_threshold))
         self.hesitation_threshold = max(2, int(hesitation_threshold))
+        self.standalone_hesitation_threshold = max(2, int(standalone_hesitation_threshold))
 
         self.reset()
 
@@ -251,13 +264,18 @@ class LongCatReasoningGuard:
             hes_count += sum(len(pat.findall(p)) for pat in _HESITATION_PATTERNS)
 
         # 1. 记忆自旋与认知停滞优先检查
+        if hes_count >= self.standalone_hesitation_threshold:
+            return True, (
+                f"LongCat-2.5 思考链反思自旋打转锁死 (Cognitive Hesitation Stalling Loop: "
+                f"{hes_count}x 犹疑停滞/打断徘徊且未采取行动)"
+            )
         if (
             mem_search_count >= self.memory_search_threshold
             and hes_count >= self.hesitation_threshold
         ):
             return True, (
                 f"LongCat-2.5 虚假记忆检索与反思自旋锁死 (Memory Retrieval & Deliberation Loop: "
-                f"{mem_search_count}x 脑内检索 release notes, {hes_count}x 犹疑打断未采取行动)"
+                f"{mem_search_count}x 脑内检索/知识反刍, {hes_count}x 犹疑打断未采取行动)"
             )
 
         # 2. 计划推翻与长距离徘徊检查
@@ -313,14 +331,19 @@ class LongCatReasoningGuard:
         if self.is_action_ready(combined_tail):
             return False, None
 
-        # 判定 A: 记忆自旋与认知停滞 (Memory Retrieval & Deliberation Loop)
+        # 判定 A: 记忆自旋与认知停滞 (Cognitive Stalling & Deliberation Loop)
+        if self.hesitation_count >= self.standalone_hesitation_threshold:
+            return True, (
+                f"LongCat-2.5 思考链反思自旋打转锁死 (Cognitive Hesitation Stalling Loop: "
+                f"{self.hesitation_count}x 犹疑停滞/打断徘徊且未采取行动)"
+            )
         if (
             self.memory_search_count >= self.memory_search_threshold
             and self.hesitation_count >= self.hesitation_threshold
         ):
             return True, (
                 f"LongCat-2.5 虚假记忆检索与反思自旋锁死 (Memory Retrieval & Deliberation Loop: "
-                f"{self.memory_search_count}x 脑内检索 release notes, {self.hesitation_count}x 犹疑打断未采取行动)"
+                f"{self.memory_search_count}x 脑内检索/知识反刍, {self.hesitation_count}x 犹疑打断未采取行动)"
             )
 
         # 判定 B: 计划推翻与长距离徘徊 (Plan Churn & Abandonment)

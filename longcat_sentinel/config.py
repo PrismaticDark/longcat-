@@ -309,6 +309,9 @@ class ProfileConfig(BaseModel):
     longcat_second_guessing_threshold: int = Field(default=3, ge=2)
     longcat_constraint_threshold: int = Field(default=5, ge=2)
     longcat_min_reasoning_chars: int = Field(default=3500, ge=100)
+    longcat_memory_search_threshold: int = Field(default=6, ge=2)
+    longcat_hesitation_threshold: int = Field(default=5, ge=2)
+    longcat_standalone_hesitation_threshold: int = Field(default=6, ge=2)
 
 
 class BreakerConfig(BaseModel):
