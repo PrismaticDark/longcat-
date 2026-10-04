@@ -52,8 +52,8 @@
 
 ### 1. 安装依赖
 ```bash
-git clone https://github.com/PrismaticDark/longcat-sentinel.git
-cd longcat-sentinel
+git clone https://github.com/PrismaticDark/longcat-.git
+cd longcat-
 pip install -r requirements.txt
 ```
 

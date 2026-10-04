@@ -213,6 +213,41 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
                 if line.startswith("data: "):
                     raw_data = line[6:].strip()
                     if raw_data == "[DONE]":
+                        if not tripped:
+                            is_loop, reason = scorer.flush()
+                            if is_loop:
+                                tripped = True
+                                trip_reason = reason
+                                trip_tier = "READ_ONLY"
+
+                        if tripped:
+                            saved_toks = max(1024, 8192 - ring.total_tokens_seen)
+                            metrics.record_circuit_trip(
+                                protocol=PROTOCOL_LABEL,
+                                model=normalized_model,
+                                reason=trip_reason or "",
+                                saved_tokens=saved_toks,
+                                tool_tier=trip_tier,
+                            )
+                            open_tool_blocks = {
+                                idx: (
+                                    tracker.active_tools[idx].arguments_buffer
+                                    if idx in tracker.active_tools
+                                    else ""
+                                )
+                                for idx in tracker.get_open_tool_indices()
+                            }
+                            events = CompliantInjector.build_anthropic_interruption(
+                                active_block_indices=list(active_blocks),
+                                open_tool_blocks=open_tool_blocks,
+                                reason=trip_reason or "",
+                                accumulated_tokens=ring.total_tokens_seen,
+                                injection_template=config.breaker.injection_template,
+                            )
+                            for event in events:
+                                yield event.encode("utf-8")
+                            break
+
                         stream_finished_normally = True
                         yield line.encode("utf-8") + b"\n\n"
                         break
@@ -287,14 +322,9 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
                                         ):
                                             is_loop, reason = scorer.feed(text)
                                             if is_loop:
-                                                # 行动就绪防误杀：如果在死循环边缘，但尾部明确表明即将落地工具，且非自认死循环
-                                                tail_ready = scorer.longcat_guard.is_action_ready(scorer.longcat_guard._tail_window)
-                                                if tail_ready and "Self-acknowledged" not in str(reason):
-                                                    pass
-                                                else:
-                                                    tripped = True
-                                                    trip_reason = reason
-                                                    trip_tier = "READ_ONLY"
+                                                tripped = True
+                                                trip_reason = reason
+                                                trip_tier = "READ_ONLY"
                                             elif think_chars > hard_think_cap:
                                                 # 极端超长兜底保护：仅当超过极端安全硬上限且未处于行动就绪状态时才截断
                                                 tail_ready = scorer.longcat_guard.is_action_ready(scorer.longcat_guard._tail_window)
@@ -307,11 +337,12 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
                                                     trip_tier = "READ_ONLY"
 
                         if tripped:
+                            saved_toks = max(1024, 8192 - ring.total_tokens_seen)
                             metrics.record_circuit_trip(
                                 protocol=PROTOCOL_LABEL,
                                 model=normalized_model,
                                 reason=trip_reason or "",
-                                saved_tokens=ESTIMATED_SAVED_TOKENS,
+                                saved_tokens=saved_toks,
                                 tool_tier=trip_tier,
                             )
                             open_tool_blocks = {

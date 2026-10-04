@@ -909,6 +909,92 @@ class TestLongCatReasoningGuard(unittest.TestCase):
         self.assertTrue(is_loop)
         self.assertIn("Memory Retrieval & Deliberation Loop", reason)
 
+    def test_streaming_without_double_newline_trips(self):
+        """测试密集思考流在完全没有双换行 \\n\\n 的情况下，增量 feed 依然能正常触发熔断"""
+        guard = LongCatReasoningGuard(
+            min_reasoning_chars=200,
+            standalone_hesitation_threshold=5,
+        )
+        single_block_text = (
+            "Let me check the exact task file list in the directory. "
+            "Wait, actually is it hand_landmarker.task or gesture_recognizer.task? "
+            "Hmm, wait, what if the model file is inside the assets subfolder? "
+            "Actually, wait, maybe I should check the PyPI package mediapipe first. "
+            "Hold on, wait, let me check the package name again. "
+            "Wait, actually what if the task file is named hand_landmarker_cpu.task? "
+        )
+        tripped = False
+        reason = None
+        for i in range(0, len(single_block_text), 30):
+            chunk = single_block_text[i : i + 30]
+            is_loop, r = guard.feed(chunk)
+            if is_loop:
+                tripped = True
+                reason = r
+                break
+        if not tripped:
+            tripped, reason = guard.flush()
+
+        self.assertTrue(tripped, "Streaming without \\n\\n failed to trip!")
+        self.assertIn("Cognitive Hesitation Stalling Loop", reason)
+
+    def test_hesitation_loop_not_immune_by_verbal_action_promise(self):
+        """测试犹豫达到高危阈值时，尾部的口头承诺 (Let me check) 绝不能作为免死金牌"""
+        guard = LongCatReasoningGuard(
+            min_reasoning_chars=200,
+            standalone_hesitation_threshold=5,
+        )
+        text = (
+            "Let me check the exact task file list in the directory.\n\n"
+            "Wait, actually is it hand_landmarker.task or gesture_recognizer.task?\n\n"
+            "Hmm, wait, what if the model file is inside the assets subfolder?\n\n"
+            "Actually, wait, maybe I should check the PyPI package mediapipe first.\n\n"
+            "Hold on, wait, let me check the package name again.\n\n"
+            "Wait, actually what if the task file is named hand_landmarker_cpu.task?\n\n"
+            "Now let me start exploring. Let me check the directory.\n"
+            "I'll use pwsh to check."
+        )
+        is_loop, reason = guard.inspect(text)
+        self.assertTrue(is_loop, "Hesitation loop was falsely exempted by verbal promise!")
+        self.assertIn("Cognitive Hesitation Stalling Loop", reason)
+
+    def test_openai_interruption_includes_usage_and_stop_reason(self):
+        """测试 OpenAI 协议中断 chunk 中包含正确的 usage 字典与明确的 stop_reason"""
+        chunks = CompliantInjector.build_openai_interruption(
+            response_id="chatcmpl-test-123",
+            model="LongCat-2.5-Preview",
+            reason="test trip",
+            accumulated_tokens=1500,
+        )
+        self.assertGreaterEqual(len(chunks), 3)
+        chunk_2_line = chunks[1].strip()
+        self.assertTrue(chunk_2_line.startswith("data: "))
+        data = json.loads(chunk_2_line[6:])
+        self.assertIn("usage", data)
+        self.assertEqual(data["usage"]["completion_tokens"], 1500)
+        self.assertEqual(data["usage"]["total_tokens"], 1500)
+        self.assertEqual(data["choices"][0]["stop_reason"], "sentinel_circuit_break")
+
+    def test_loop_scorer_flush_catches_unbroken_tail(self):
+        """测试 LoopScorer flush 能够捕获流尾部未触发的残余思考死循环"""
+        scorer = LoopScorer(
+            longcat_reasoning_guard_enabled=True,
+            longcat_min_reasoning_chars=200,
+            longcat_standalone_hesitation_threshold=5,
+        )
+        single_block_text = (
+            "Let me check the exact task file list in the directory. "
+            "Wait, actually is it hand_landmarker.task? "
+            "Hmm, wait, what if the model file is inside assets? "
+            "Actually, wait, maybe I should check PyPI first. "
+            "Hold on, wait, let me check the package name. "
+            "Wait, actually what if it is hand_landmarker_cpu.task? "
+        )
+        scorer.feed(single_block_text)
+        is_loop, reason = scorer.flush()
+        self.assertTrue(is_loop)
+        self.assertIn("LongCat-2.5", reason)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

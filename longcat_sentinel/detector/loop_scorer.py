@@ -73,7 +73,7 @@ class LoopScorer:
         longcat_plan_churn_threshold: int = 3,
         longcat_second_guessing_threshold: int = 3,
         longcat_constraint_threshold: int = 5,
-        longcat_min_reasoning_chars: int = 800,
+        longcat_min_reasoning_chars: int = 3500,
         longcat_memory_search_threshold: int = 6,
         longcat_hesitation_threshold: int = 5,
         longcat_standalone_hesitation_threshold: int = 6,
@@ -152,6 +152,15 @@ class LoopScorer:
             return False, None
         self._since_check = 0
 
+        return self.check_text_repetition(self.get_window_text())
+
+    def flush(self) -> Tuple[bool, Optional[str]]:
+        """
+        流结束时强制刷新并检查残余内容 (同时冲洗并评估 LongCat guard 缓冲)。
+        """
+        is_guard_loop, guard_reason = self.longcat_guard.flush()
+        if is_guard_loop:
+            return True, guard_reason
         return self.check_text_repetition(self.get_window_text())
 
     def get_window_text(self) -> str:

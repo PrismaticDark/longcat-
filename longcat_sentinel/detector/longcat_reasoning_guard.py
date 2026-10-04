@@ -159,10 +159,82 @@ class LongCatReasoningGuard:
         self.question_count: int = 0
         self._buffer: str = ""
         self._tail_window: str = ""
+        self._scanned_chars: int = 0
+        self._matched_plan_offsets: set[int] = set()
+        self._matched_abandon_offsets: set[int] = set()
+        self._matched_mem_offsets: set[int] = set()
+        self._matched_hes_offsets: set[int] = set()
+
+    def _scan_buffer(self, force: bool = False) -> Tuple[bool, Optional[str]]:
+        """
+        对内部缓冲进行增量特征扫描与统计更新。
+        即使文本中没有 '\\n\\n'（如纯单段、单换行或长列表），也会按步长推进扫描。
+        """
+        buf_len = len(self._buffer)
+        unscanned = buf_len - self._scanned_chars
+
+        # 如果未到步长且非强制，并且没有换行符，推迟扫描以保证性能
+        if not force and unscanned < 200 and "\n" not in self._buffer[self._scanned_chars:]:
+            return False, None
+
+        # 扫描起点往前回溯 50 字符，以防模式跨切片截断
+        scan_start = max(0, self._scanned_chars - 50)
+        scan_slice = self._buffer[scan_start:]
+        base_abs = self.total_chars - buf_len + scan_start
+
+        # 检查自认死循环
+        if any(pat.search(scan_slice) for pat in _SELF_LOOP_PATTERNS):
+            return True, "LongCat-2.5 思考链明确自认陷入死循环 (Self-acknowledged loop detected)"
+
+        for pat in _PLAN_CHURN_PATTERNS:
+            for m in pat.finditer(scan_slice):
+                abs_pos = base_abs + m.start()
+                if abs_pos not in self._matched_plan_offsets:
+                    self._matched_plan_offsets.add(abs_pos)
+                    self.plan_positions.append(abs_pos)
+                    self.plan_samples.append(m.group()[:60].replace("\n", " "))
+
+        for pat in _ABANDONMENT_PATTERNS:
+            for m in pat.finditer(scan_slice):
+                abs_pos = base_abs + m.start()
+                if abs_pos not in self._matched_abandon_offsets:
+                    self._matched_abandon_offsets.add(abs_pos)
+                    self.abandon_positions.append(abs_pos)
+                    self.abandon_samples.append(m.group()[:60].replace("\n", " "))
+
+        for pat in _MEMORY_SEARCH_PATTERNS:
+            for m in pat.finditer(scan_slice):
+                abs_pos = base_abs + m.start()
+                if abs_pos not in self._matched_mem_offsets:
+                    self._matched_mem_offsets.add(abs_pos)
+                    self.memory_search_count += 1
+
+        for pat in _HESITATION_PATTERNS:
+            for m in pat.finditer(scan_slice):
+                abs_pos = base_abs + m.start()
+                if abs_pos not in self._matched_hes_offsets:
+                    self._matched_hes_offsets.add(abs_pos)
+                    self.hesitation_count += 1
+
+        self._scanned_chars = buf_len
+
+        # 内存安全截断：如果 buffer 超过 64k 字符，保留后 32k 字符
+        if len(self._buffer) > 64000:
+            trim_size = len(self._buffer) - 32000
+            self._buffer = self._buffer[trim_size:]
+            self._scanned_chars = max(0, self._scanned_chars - trim_size)
+            min_keep = self.total_chars - len(self._buffer)
+            self._matched_plan_offsets = {p for p in self._matched_plan_offsets if p >= min_keep}
+            self._matched_abandon_offsets = {p for p in self._matched_abandon_offsets if p >= min_keep}
+            self._matched_mem_offsets = {p for p in self._matched_mem_offsets if p >= min_keep}
+            self._matched_hes_offsets = {p for p in self._matched_hes_offsets if p >= min_keep}
+
+        return False, None
 
     def feed(self, chunk: str) -> Tuple[bool, Optional[str]]:
         """
         增量推入流式生成的思考链片段，低开销维护状态并在达成多重严格条件时熔断。
+        不再受制于 '\\n\\n'，支持长单段或密集流的准实时检测。
         """
         if not self.enabled or not chunk:
             return False, None
@@ -172,129 +244,77 @@ class LongCatReasoningGuard:
         self._tail_window = (self._tail_window + chunk)[-2000:]
         self.question_count += chunk.count("?")
 
+        # 优先极速自认死循环检测
+        if any(pat.search(self._tail_window) for pat in _SELF_LOOP_PATTERNS):
+            return True, "LongCat-2.5 思考链明确自认陷入死循环 (Self-acknowledged loop detected)"
+
+        # 增量扫描 buffer
+        is_self_loop, reason = self._scan_buffer(force=False)
+        if is_self_loop:
+            return True, reason
+
         # 防线 1: 字符数未达到硬门槛，100% 安全豁免
         if self.total_chars < self.min_reasoning_chars:
             return False, None
 
-        # 检查缓冲中是否已有完整段落 (以 \n\n 分割)
-        if "\n\n" in self._buffer:
-            parts = self._buffer.split("\n\n")
-            completed = parts[:-1]
-            self._buffer = parts[-1]
+        # 评估是否触发死循环
+        return self._evaluate_loop_state()
 
-            accumulated_offset = (
-                self.total_chars
-                - len(self._buffer)
-                - sum(len(p) + 2 for p in completed)
-            )
+    def flush(self) -> Tuple[bool, Optional[str]]:
+        """
+        流式传输结束时的收尾冲洗检查。
+        强制扫描残留 buffer 并做最终死锁评估，防止尾部无换行内容遗漏。
+        """
+        if not self.enabled or self.total_chars < self.min_reasoning_chars:
+            return False, None
 
-            for para in completed:
-                p_clean = para.strip()
-                para_pos = accumulated_offset + len(p_clean)
-                accumulated_offset += len(para) + 2
+        is_self_loop, reason = self._scan_buffer(force=True)
+        if is_self_loop:
+            return True, reason
 
-                if len(p_clean) < 15:
-                    continue
-
-                # 检查自认死循环
-                if any(pat.search(p_clean) for pat in _SELF_LOOP_PATTERNS):
-                    return True, "LongCat-2.5 思考链明确自认陷入死循环 (Self-acknowledged loop detected)"
-
-                if any(pat.search(p_clean) for pat in _PLAN_CHURN_PATTERNS):
-                    self.plan_positions.append(para_pos)
-                    self.plan_samples.append(p_clean[:60].replace("\n", " "))
-
-                if any(pat.search(p_clean) for pat in _ABANDONMENT_PATTERNS):
-                    self.abandon_positions.append(para_pos)
-                    self.abandon_samples.append(p_clean[:60].replace("\n", " "))
-
-                self.memory_search_count += sum(
-                    len(pat.findall(p_clean)) for pat in _MEMORY_SEARCH_PATTERNS
-                )
-                self.hesitation_count += sum(
-                    len(pat.findall(p_clean)) for pat in _HESITATION_PATTERNS
-                )
-
-                # 评估是否触发熔断
-                is_loop, reason = self._evaluate_loop_state()
-                if is_loop:
-                    return True, reason
-
-        return False, None
+        return self._evaluate_loop_state()
 
     def inspect(self, text: str) -> Tuple[bool, Optional[str]]:
         """
         无状态全量评估 (适用于非流式检查或当前窗口文本的快照评估)。
+        与 feed()/flush() 共享 100% 相同的基础设施，消除双轨逻辑分叉。
         """
         if not self.enabled or not text or len(text) < self.min_reasoning_chars:
             return False, None
 
-        # 自认死循环直接切断
-        if any(pat.search(text) for pat in _SELF_LOOP_PATTERNS):
-            return True, "LongCat-2.5 思考链明确自认陷入死循环 (Self-acknowledged loop detected)"
-
-        # 防线 2: 行动就绪收敛豁免 (末尾存在清单项或明确行动意图且无推翻)
-        if self.is_action_ready(text):
-            return False, None
-
-        paras = [p.strip() for p in text.split("\n\n") if p.strip()]
-        if len(paras) < 2:
-            paras = [p.strip() for p in text.split("\n") if p.strip()]
-
-        plan_positions: List[int] = []
-        abandon_positions: List[int] = []
-        plan_samples: List[str] = []
-        abandon_samples: List[str] = []
-        mem_search_count = 0
-        hes_count = 0
-        curr_offset = 0
-
-        for p in paras:
-            curr_offset += len(p) + 2
-            if any(pat.search(p) for pat in _PLAN_CHURN_PATTERNS):
-                plan_positions.append(curr_offset)
-                plan_samples.append(p[:60].replace("\n", " "))
-            if any(pat.search(p) for pat in _ABANDONMENT_PATTERNS):
-                abandon_positions.append(curr_offset)
-                abandon_samples.append(p[:60].replace("\n", " "))
-
-            mem_search_count += sum(
-                len(pat.findall(p)) for pat in _MEMORY_SEARCH_PATTERNS
-            )
-            hes_count += sum(len(pat.findall(p)) for pat in _HESITATION_PATTERNS)
-
-        # 1. 记忆自旋与认知停滞优先检查
-        if hes_count >= self.standalone_hesitation_threshold:
-            return True, (
-                f"LongCat-2.5 思考链反思自旋打转锁死 (Cognitive Hesitation Stalling Loop: "
-                f"{hes_count}x 犹疑停滞/打断徘徊且未采取行动)"
-            )
-        if (
-            mem_search_count >= self.memory_search_threshold
-            and hes_count >= self.hesitation_threshold
-        ):
-            return True, (
-                f"LongCat-2.5 虚假记忆检索与反思自旋锁死 (Memory Retrieval & Deliberation Loop: "
-                f"{mem_search_count}x 脑内检索/知识反刍, {hes_count}x 犹疑打断未采取行动)"
-            )
-
-        # 2. 计划推翻与长距离徘徊检查
-        return self._evaluate_plan_churn(
-            len(text),
-            plan_positions,
-            abandon_positions,
-            plan_samples,
-            abandon_samples,
+        g = LongCatReasoningGuard(
+            enabled=self.enabled,
+            plan_churn_threshold=self.plan_churn_threshold,
+            second_guessing_threshold=self.second_guessing_threshold,
+            constraint_threshold=self.constraint_threshold,
+            min_reasoning_chars=self.min_reasoning_chars,
+            memory_search_threshold=self.memory_search_threshold,
+            hesitation_threshold=self.hesitation_threshold,
+            standalone_hesitation_threshold=self.standalone_hesitation_threshold,
         )
+        is_loop, reason = g.feed(text)
+        if is_loop:
+            return True, reason
+        return g.flush()
 
     def is_action_ready(self, text: str) -> bool:
         """
         检查末尾文本是否包含行动就绪信号 (清单条目或明确工具/命令行动宣告) 且未被后续推翻。
         若满足，表明模型正在进行 plan->act 交接，即将发起工具调用，强制豁免。
+
+        【防漏报修复】:
+        若模型已经多次犹疑停滞 (hesitation_count >= hesitation_threshold)
+        或多次方案自我推翻废弃 (len(abandon_positions) >= 2)
+        或高频知识反刍 (memory_search_count >= memory_search_threshold)，
+        末尾单纯口头复述 "Let me check/run" 属于死循环伪装措辞，绝不给予豁免！
         """
         if not text:
             return False
         tail = text[-1000:] if len(text) > 1000 else text
+
+        # 极限停滞防线: 纯单边犹疑已经达到绝对高危阈值时，不予任何豁免
+        if self.hesitation_count >= self.standalone_hesitation_threshold:
+            return False
 
         # 1. 结构化待办清单 (- item, 1. item, >=2 条)
         items = _CHECKLIST_ITEM_RE.findall(tail)
@@ -305,6 +325,14 @@ class LongCatReasoningGuard:
                 return True
 
         # 2. 明确的命令/工具执行宣告 (如 "I'll use pwsh to check", "Let me run some commands", "开始执行命令")
+        # 严格约束：若已发生多次自我推翻或认知纠结自旋，纯口头宣告不再豁免
+        if (
+            self.hesitation_count >= self.hesitation_threshold
+            or self.memory_search_count >= self.memory_search_threshold
+            or len(self.abandon_positions) >= 2
+        ):
+            return False
+
         action_hits = []
         for pat in _ACTION_INITIATION_PATTERNS:
             for m in pat.finditer(tail):

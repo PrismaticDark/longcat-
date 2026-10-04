@@ -232,6 +232,14 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                 if line.startswith("data: "):
                     raw_data = line[6:].strip()
                     if raw_data == "[DONE]":
+                        # 收尾冲洗评估：防范长单段或尾部文本未触发
+                        if not tripped:
+                            is_loop, reason = scorer.flush()
+                            if is_loop:
+                                tripped = True
+                                trip_reason = reason
+                                trip_tier = "READ_ONLY"
+
                         violation = finalize_tool_calls()
                         if violation:
                             tripped = True
@@ -240,17 +248,19 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                             yield fallback_finish_chunk()
                             has_emitted_finish = True
                         if tripped:
+                            saved_toks = max(1024, 8192 - ring.total_tokens_seen)
                             metrics.record_circuit_trip(
                                 protocol=PROTOCOL_LABEL,
                                 model=normalized_model,
                                 reason=trip_reason or "",
-                                saved_tokens=ESTIMATED_SAVED_TOKENS,
+                                saved_tokens=saved_toks,
                                 tool_tier=trip_tier,
                             )
                             for event in CompliantInjector.build_openai_interruption(
                                 response_id=resp_id,
                                 model=normalized_model,
                                 reason=trip_reason or "",
+                                accumulated_tokens=ring.total_tokens_seen,
                                 injection_template=config.breaker.injection_template,
                             ):
                                 yield event.encode("utf-8")
@@ -323,14 +333,9 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                                     ring.write(reasoning)
                                     is_loop, reason = scorer.feed(reasoning)
                                     if is_loop:
-                                        # 行动就绪防误杀：如果在死循环边缘，但尾部明确表明即将落地工具，且非自认死循环
-                                        tail_ready = scorer.longcat_guard.is_action_ready(scorer.longcat_guard._tail_window)
-                                        if tail_ready and "Self-acknowledged" not in str(reason):
-                                            pass
-                                        else:
-                                            tripped = True
-                                            trip_reason = reason
-                                            trip_tier = "READ_ONLY"
+                                        tripped = True
+                                        trip_reason = reason
+                                        trip_tier = "READ_ONLY"
                                     elif think_chars > hard_think_cap:
                                         # 极端超长兜底保护：仅当超过极端安全硬上限且未处于行动就绪状态时才截断
                                         tail_ready = scorer.longcat_guard.is_action_ready(scorer.longcat_guard._tail_window)
@@ -343,17 +348,19 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                                             trip_tier = "READ_ONLY"
 
                         if tripped:
+                            saved_toks = max(1024, 8192 - ring.total_tokens_seen)
                             metrics.record_circuit_trip(
                                 protocol=PROTOCOL_LABEL,
                                 model=normalized_model,
                                 reason=trip_reason or "",
-                                saved_tokens=ESTIMATED_SAVED_TOKENS,
+                                saved_tokens=saved_toks,
                                 tool_tier=trip_tier,
                             )
                             for event in CompliantInjector.build_openai_interruption(
                                 response_id=resp_id,
                                 model=normalized_model,
                                 reason=trip_reason or "",
+                                accumulated_tokens=ring.total_tokens_seen,
                                 injection_template=config.breaker.injection_template,
                             ):
                                 yield event.encode("utf-8")

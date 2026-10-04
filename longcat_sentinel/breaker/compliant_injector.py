@@ -186,9 +186,11 @@ class CompliantInjector:
         response_id: str,
         model: str,
         reason: str,
+        accumulated_tokens: int = 0,
+        finish_reason: str = "stop",
         injection_template: Optional[str] = None,
     ) -> List[str]:
-        """构建 100% 协议合规的 OpenAI Chat Completions 流式中断 chunk 序列。"""
+        """构建 100% 协议合规且携带 usage 统计与明确熔断停止状态的 OpenAI Chat Completions 流式中断 chunk 序列。"""
         warning_text = render_template(
             injection_template or DEFAULT_OPENAI_TEMPLATE, reason
         )
@@ -209,7 +211,19 @@ class CompliantInjector:
             "object": "chat.completion.chunk",
             "created": ts,
             "model": model,
-            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {},
+                    "finish_reason": finish_reason,
+                    "stop_reason": "sentinel_circuit_break",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": max(0, int(accumulated_tokens)),
+                "total_tokens": max(0, int(accumulated_tokens)),
+            },
         }
 
         return [
