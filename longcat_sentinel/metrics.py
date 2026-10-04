@@ -86,6 +86,18 @@ class MetricsCollector:
                     "is_safe": False,
                 }
             )
+            # 实时终端可视化高亮呈现 (避免 Windows GBK 控制台编码异常)
+            try:
+                import sys
+                print(
+                    f"\n[SENTINEL CIRCUIT BREAKER TRIPPED] [!] {protocol} | Model: {model}\n"
+                    f"  |- 触发原因: {safe_reason}\n"
+                    f"  |- 预估节省 Token: +{saved_tokens}\n"
+                    f"  `- 累计熔断次数: {self.tripped_circuits}\n",
+                    flush=True,
+                )
+            except Exception:
+                pass
 
     def record_safe_completion(self, protocol: str, model: str) -> None:
         """记录正常完成的安全审计日志"""

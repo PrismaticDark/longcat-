@@ -32,8 +32,26 @@ _SEPARATOR_LINE_RE = re.compile(r"(?m)^[ \t]*(?:-{3,}|={3,}|\*{3,}|_{3,})[ \t]*$
 _MULTI_SPACE_RE = re.compile(r"[ \t]{2,}")
 
 
+from .longcat_reasoning_guard import LongCatReasoningGuard
+
+_SELF_LOOP_PATTERNS = [
+    re.compile(r"\bstop\s+this\s+loop\b", re.IGNORECASE),
+    re.compile(r"\bgoing\s+in\s+circles\b", re.IGNORECASE),
+    re.compile(r"\bstuck\s+in\s+a\s+loop\b", re.IGNORECASE),
+    re.compile(r"\bcompletely\s+different\s+approach\b", re.IGNORECASE),
+    re.compile(r"\breconsider\s+the\s+problem\b", re.IGNORECASE),
+    re.compile(r"\banother\s+idea\b", re.IGNORECASE),
+    re.compile(r"\btake\s+a\s+concrete\s+action\b", re.IGNORECASE),
+    re.compile(r"陷入死循环"),
+    re.compile(r"换个思路"),
+    re.compile(r"重新审视"),
+    re.compile(r"停止循环"),
+    re.compile(r"死循环"),
+]
+
+
 class LoopScorer:
-    """Detects periodic N-gram repetition (exact and fuzzy) in streamed text."""
+    """Detects periodic N-gram, macro block, semantic self-acknowledgment, and LongCat recursive reasoning loops."""
 
     def __init__(
         self,
@@ -45,9 +63,19 @@ class LoopScorer:
         fuzzy_similarity_ratio: float = 0.85,
         fuzzy_repeat_threshold: int = 4,
         code_block_multiplier: float = 1.5,
-        max_period: int = 200,
+        max_period: int = 2000,
         ignore_whitespaces: bool = True,
         ignore_markdown_separators: bool = True,
+        block_loop_enabled: bool = True,
+        block_repeat_threshold: int = 2,
+        min_block_chars: int = 25,
+        self_loop_heuristics_enabled: bool = True,
+        self_loop_threshold: int = 3,
+        longcat_reasoning_guard_enabled: bool = True,
+        longcat_plan_churn_threshold: int = 3,
+        longcat_second_guessing_threshold: int = 3,
+        longcat_constraint_threshold: int = 5,
+        longcat_min_reasoning_chars: int = 800,
     ):
         self.min_period = max(1, int(min_period))
         self.repeat_threshold = max(2, int(repeat_threshold))
@@ -60,6 +88,20 @@ class LoopScorer:
         self.max_period = max(self.min_period + 1, int(max_period))
         self.ignore_whitespaces = bool(ignore_whitespaces)
         self.ignore_markdown_separators = bool(ignore_markdown_separators)
+        self.block_loop_enabled = bool(block_loop_enabled)
+        self.block_repeat_threshold = max(2, int(block_repeat_threshold))
+        self.min_block_chars = max(10, int(min_block_chars))
+        self.self_loop_heuristics_enabled = bool(self_loop_heuristics_enabled)
+        self.self_loop_threshold = max(2, int(self_loop_threshold))
+
+        # 1:1 美团 LongCat 专属递归推理与并行思考锁死守卫
+        self.longcat_guard = LongCatReasoningGuard(
+            enabled=longcat_reasoning_guard_enabled,
+            plan_churn_threshold=longcat_plan_churn_threshold,
+            second_guessing_threshold=longcat_second_guessing_threshold,
+            constraint_threshold=longcat_constraint_threshold,
+            min_reasoning_chars=longcat_min_reasoning_chars,
+        )
 
         self.last_tool_outputs: List[str] = []
         self.current_score = 0
@@ -69,6 +111,15 @@ class LoopScorer:
         self._window_len = 0
         self._since_check = 0
         self._check_interval = max(self.min_period, 8)
+
+    def reset(self) -> None:
+        """Resets both window and internal LongCat reasoning guard states."""
+        self._window.clear()
+        self._window_len = 0
+        self._since_check = 0
+        self.longcat_guard.reset()
+        self.last_tool_outputs.clear()
+        self.current_score = 0
 
     # -- incremental API ------------------------------------------------------
     def feed(self, text: str) -> Tuple[bool, Optional[str]]:
@@ -80,6 +131,11 @@ class LoopScorer:
         """
         if not text:
             return False, None
+
+        # 1. 优先触发美团 LongCat 专属增量推理守卫 (毫秒级掐断计划反刍与推翻打转)
+        is_guard_loop, guard_reason = self.longcat_guard.feed(text)
+        if is_guard_loop:
+            return True, guard_reason
 
         self._window.append(text)
         self._window_len += len(text)
@@ -99,10 +155,31 @@ class LoopScorer:
 
     # -- detection ------------------------------------------------------------
     def check_text_repetition(self, text: str) -> Tuple[bool, Optional[str]]:
-        """Detects strict (and optionally fuzzy) periodic repetition in `text`."""
+        """Detects strict (and optionally fuzzy, macro-block, self-loop, and LongCat reasoning) repetition in `text`."""
         if not text:
             return False, None
 
+        raw_window = text[-self.window_chars:] if self.window_chars else text
+        clean = self._normalize(raw_window)
+
+        # 1. 美团 LongCat 专属递归推理与元反思震荡识别 (1:1 专属特化拦截)
+        is_longcat_loop, longcat_reason = self.longcat_guard.inspect(clean)
+        if is_longcat_loop:
+            return True, longcat_reason
+
+        # 2. 思考链自相矛盾/自白反刍死循环启发式识别 (最高优先级拦截，毫秒级掐断)
+        if self.self_loop_heuristics_enabled:
+            is_self_loop, reason = self._check_self_loop(clean)
+            if is_self_loop:
+                return True, reason
+
+        # 3. 宏观语义段落/多行代码块哈希循环识别 (拦截 300~2000+ 字符长段落大循环)
+        if self.block_loop_enabled:
+            is_block_loop, reason = self._check_macro_blocks(raw_window)
+            if is_block_loop:
+                return True, reason
+
+        # 3. 微观与中观 N-Gram / 模糊周期重复检测 (字符级滑动扫描)
         stripped = text.strip()
         required_repeats = self.repeat_threshold
         if self.fuzzy_enabled:
@@ -111,18 +188,10 @@ class LoopScorer:
         if len(stripped) < self.min_period * required_repeats:
             return False, None
 
-        # Inside an unterminated code fence, template code is expected to repeat, so
-        # the minimum detectable period is widened instead of firing early.
         multiplier = self.code_block_multiplier if (text.count("```") % 2 != 0) else 1.0
         effective_min = max(1, int(self.min_period * multiplier))
-
-        raw_window = text[-self.window_chars:] if self.window_chars else text
-        clean = self._normalize(raw_window)
         n = len(clean)
 
-        # A period is only worth testing if it could repeat often enough to trip.
-        # When fuzzy detection is enabled its (usually lower) threshold also bounds
-        # the period, otherwise a high exact threshold would hide long fuzzy repeats.
         divisor = self.repeat_threshold
         if self.fuzzy_enabled:
             divisor = min(divisor, self.fuzzy_repeat_threshold)
@@ -155,6 +224,59 @@ class LoopScorer:
                         f"Fuzzy N-gram repeat ({fuzzy_count}x of length {p_len}, "
                         f"similarity>={self.fuzzy_similarity_ratio}): '{chunk[:30]}...'"
                     )
+
+        return False, None
+
+    def _check_self_loop(self, text: str) -> Tuple[bool, Optional[str]]:
+        """检测模型在思考链中频繁自认陷入死循环或反复自我纠错打转的语义特征"""
+        total_hits = 0
+        matched_samples: List[str] = []
+        for pat in _SELF_LOOP_PATTERNS:
+            matches = pat.findall(text)
+            if matches:
+                total_hits += len(matches)
+                matched_samples.append(str(matches[0]))
+                if total_hits >= self.self_loop_threshold:
+                    sample = matched_samples[0]
+                    return True, (
+                        f"Thinking loop self-acknowledgment detected ({total_hits}x self-correction phrases): "
+                        f"'{sample}'"
+                    )
+        return False, None
+
+    def _check_macro_blocks(self, text: str) -> Tuple[bool, Optional[str]]:
+        """检测段落级、大块代码级长周期循环 ($A -> B -> A -> B$ 或重复段落)"""
+        # 优先按双换行分段，若长文本未规范双换行则按单换行且具备实质长度的行分块
+        raw_paras = [p.strip() for p in text.split("\n\n") if len(p.strip()) >= self.min_block_chars]
+        if len(raw_paras) < 2:
+            raw_paras = [p.strip() for p in text.split("\n") if len(p.strip()) >= self.min_block_chars]
+
+        if len(raw_paras) < 2:
+            return False, None
+
+        # 1. 相同长段落高频复现检测
+        seen: dict[str, int] = {}
+        for p in raw_paras:
+            clean = self._normalize(p).lower().strip()
+            seen[clean] = seen.get(clean, 0) + 1
+            if seen[clean] >= self.block_repeat_threshold:
+                sample = p[:50].replace("\n", " ").strip()
+                return True, (
+                    f"Macro block repeat ({seen[clean]}x of len {len(p)}): "
+                    f"'{sample}...'"
+                )
+
+        # 2. 段落周期链循环检测 (如 A->B->C->A->B->C，支持 2 到 8 个段落组成的宏观周期)
+        n = len(raw_paras)
+        for k in range(2, min(9, n // 2 + 1)):
+            tail = [self._normalize(p).lower().strip() for p in raw_paras[-k:]]
+            prev = [self._normalize(p).lower().strip() for p in raw_paras[-2 * k : -k]]
+            if tail == prev and len(set(tail)) > 1:
+                sample = raw_paras[-k][:40].replace("\n", " ").strip()
+                return True, (
+                    f"Macro block cycle detected ({k}-block pattern repeated): "
+                    f"'{sample}...'"
+                )
 
         return False, None
 

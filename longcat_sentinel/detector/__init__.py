@@ -13,6 +13,7 @@ from longcat_sentinel.detector.capability_manifest import (
     CapabilityGuard,
     ToolSafetyTier,
 )
+from longcat_sentinel.detector.longcat_reasoning_guard import LongCatReasoningGuard
 from longcat_sentinel.detector.loop_scorer import LoopScorer
 from longcat_sentinel.detector.parallel_tool_tracker import (
     ParallelToolTracker,
@@ -26,6 +27,7 @@ __all__ = [
     "DANGEROUS_PATTERNS",
     "CapabilityGuard",
     "ToolSafetyTier",
+    "LongCatReasoningGuard",
     "LoopScorer",
     "ParallelToolTracker",
     "ToolCallInstance",

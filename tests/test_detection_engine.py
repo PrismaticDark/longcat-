@@ -44,6 +44,7 @@ from longcat_sentinel.config import (
     validate_tls_startup,
 )
 from longcat_sentinel.detector.capability_manifest import CapabilityGuard, ToolSafetyTier
+from longcat_sentinel.detector.longcat_reasoning_guard import LongCatReasoningGuard
 from longcat_sentinel.detector.loop_scorer import LoopScorer
 from longcat_sentinel.detector.ring_buffer import RingBuffer
 from longcat_sentinel.detector.tool_loop_guard import ToolLoopGuard
@@ -607,6 +608,217 @@ class TestMetricsCollector(unittest.TestCase):
         self.assertEqual(len(snapshot["audit_events"]), 2)
         self.assertFalse(snapshot["audit_events"][0]["is_safe"])
         self.assertFalse(snapshot["audit_events"][1]["is_safe"])
+
+
+class TestMacroBlockAndSelfLoopDetection(unittest.TestCase):
+    """TC-UNIT-220: Macro block cycle detection and self-loop heuristics."""
+
+    def test_macro_block_repeat_detected_early(self):
+        scorer = LoopScorer(block_loop_enabled=True, block_repeat_threshold=2, min_block_chars=25)
+        block = (
+            "Actually, I just realized that I should check if the model file might be available "
+            "through the mediapipe package's data files or through a different mechanism."
+        )
+        text = f"{block}\n\nSome intervening text that is not a repeat\n\n{block}"
+        is_loop, reason = scorer.check_text_repetition(text)
+        self.assertTrue(is_loop)
+        self.assertIn("Macro block repeat", reason)
+
+    def test_macro_block_cycle_detected(self):
+        scorer = LoopScorer(block_loop_enabled=True, block_repeat_threshold=99, min_block_chars=20)
+        b1 = "First distinct paragraph with substantial content about problem analysis."
+        b2 = "Second distinct paragraph exploring alternative architecture solutions."
+        text = f"{b1}\n\n{b2}\n\n{b1}\n\n{b2}"
+        is_loop, reason = scorer.check_text_repetition(text)
+        self.assertTrue(is_loop)
+        self.assertIn("Macro block cycle detected", reason)
+
+    def test_self_loop_heuristics_english(self):
+        scorer = LoopScorer(self_loop_heuristics_enabled=True, self_loop_threshold=3)
+        text = (
+            "Thinking... OK, I need to stop this loop. Let me take a concrete action. "
+            "Wait, I am definitely going in circles now. Let me reconsider the problem carefully."
+        )
+        is_loop, reason = scorer.check_text_repetition(text)
+        self.assertTrue(is_loop)
+        self.assertIn("Thinking loop self-acknowledgment detected", reason)
+
+    def test_self_loop_heuristics_chinese(self):
+        scorer = LoopScorer(self_loop_heuristics_enabled=True, self_loop_threshold=3)
+        text = "模型正在推理... 好像陷入死循环了。让我换个思路尝试。必须停止循环并重新审视。"
+        is_loop, reason = scorer.check_text_repetition(text)
+        self.assertTrue(is_loop)
+        self.assertIn("Thinking loop self-acknowledgment detected", reason)
+
+    def test_widened_max_period_catches_large_period_cycle(self):
+        scorer = LoopScorer(max_period=2000, repeat_threshold=2, block_loop_enabled=False, self_loop_heuristics_enabled=False)
+        unit = "ABCDEFGHIJ" * 30
+        is_loop, reason = scorer.check_text_repetition(unit * 2)
+        self.assertTrue(is_loop)
+
+
+class TestSemanticToolSkeletonGuard(unittest.TestCase):
+    """TC-UNIT-320: Tool call command skeleton normalization and semantic loop defense."""
+
+    def setUp(self):
+        ToolLoopGuard.reset()
+        self.guard = ToolLoopGuard(
+            guard=CapabilityGuard(),
+            loop_enabled=True,
+            tool_skeleton_enabled=True,
+            max_duplicate_skeleton_calls=2,
+            max_duplicate_calls=5,
+        )
+
+    def tearDown(self):
+        ToolLoopGuard.reset()
+
+    def test_search_file_variations_trip_skeleton_guard(self):
+        cmd1 = 'python -c "import os; [print(f) for f in fn if f.endswith(\'.tflite\')]" 2>$null'
+        v1, _ = self.guard.inspect("pwsh", {"command": cmd1})
+        self.assertIsNone(v1)
+
+        cmd2 = 'python -c "import os; [print(f) for f in fn if f.endswith(\'.binarypb\')]" 2>&1 | Select-Object -First 10'
+        v2, reason = self.guard.inspect("pwsh", {"command": cmd2})
+        self.assertEqual(v2, "tool_loop")
+        self.assertIn("Repeated semantic tool call", reason)
+
+    def test_distinct_tools_and_commands_do_not_trip(self):
+        v1, _ = self.guard.inspect("pwsh", {"command": "git status"})
+        v2, _ = self.guard.inspect("pwsh", {"command": "npm test"})
+        v3, _ = self.guard.inspect("read_file", {"path": "a.txt"})
+        v4, _ = self.guard.inspect("read_file", {"path": "b.txt"})
+        self.assertIsNone(v1)
+        self.assertIsNone(v2)
+        self.assertIsNone(v3)
+        self.assertIsNone(v4)
+
+
+class TestLongCatReasoningGuard(unittest.TestCase):
+    """TC-UNIT-330: 1:1 tailored defense for Meituan LongCat-2.5-Preview recursive reasoning loops."""
+
+    def test_plan_churn_repetition_trips_guard(self):
+        guard = LongCatReasoningGuard(min_reasoning_chars=200, plan_churn_threshold=3)
+        text = (
+            "Let me think about how to solve this task.\n\n"
+            "Let me plan:\n1. Check the environment.\n2. Run the script.\n\n"
+            "Wait, maybe the script is missing dependencies.\n\n"
+            "My plan is:\n1. Inspect package list.\n2. Re-install if needed.\n\n"
+            "On second thought, let me reconsider the whole approach.\n\n"
+            "Here is the plan:\n1. Check Python version first.\n2. Execute via subprocess.\n\n"
+            "Wait, actually let me reconsider whether subprocess is permitted.\n"
+        )
+        is_loop, reason = guard.inspect(text)
+        self.assertTrue(is_loop)
+        self.assertIn("Plan Churn", reason)
+
+    def test_action_readiness_checklist_immunity(self):
+        """末尾包含具体检查清单且无推翻废弃时，必须强制放行"""
+        guard = LongCatReasoningGuard(min_reasoning_chars=200)
+        text = (
+            "Let me plan:\n1. Step one.\n\n"
+            "Wait, reconsideration.\n\n"
+            "Let me first explore the environment. Let me check:\n"
+            "- Current working directory\n"
+            "- Python version and location\n"
+            "- Whether mediapipe is already installed\n"
+            "- pip configuration\n\n"
+            "Let me start by investigating the environment.\n"
+        )
+        is_loop, reason = guard.inspect(text)
+        self.assertFalse(is_loop)
+        self.assertIsNone(reason)
+
+    def test_normal_single_plan_does_not_trip(self):
+        guard = LongCatReasoningGuard(min_reasoning_chars=200)
+        text = (
+            "I need to read the configuration file and update the settings.\n\n"
+            "Here is the plan:\n"
+            "1. Read config.yaml.\n"
+            "2. Modify the target parameters.\n"
+            "3. Save and return.\n\n"
+            "I will proceed with reading the file."
+        )
+        is_loop, reason = guard.inspect(text)
+        self.assertFalse(is_loop)
+        self.assertIsNone(reason)
+
+    def test_streaming_feed_incremental_trips_early(self):
+        guard = LongCatReasoningGuard(min_reasoning_chars=100, plan_churn_threshold=3)
+        chunks = [
+            "Let me think about how to solve this complex problem.\n\n",
+            "Let me plan:\n1. Check the local files and directories.\n\n",
+            "Wait, actually reconsideration is needed.\n\n",
+            "The plan:\n1. Check Python version first.\n\n",
+            "Wait, rethink again.\n\n",
+            "Plan:\n1. Run the diagnostic test.\n\n",
+        ]
+        tripped = False
+        trip_reason = None
+        for chunk in chunks:
+            h, r = guard.feed(chunk)
+            if h:
+                tripped = True
+                trip_reason = r
+                break
+        self.assertTrue(tripped)
+        self.assertIn("Plan Churn", trip_reason)
+
+    def test_loop_scorer_end_to_end_integration(self):
+        scorer = LoopScorer(
+            longcat_reasoning_guard_enabled=True,
+            longcat_min_reasoning_chars=100,
+            longcat_plan_churn_threshold=3,
+        )
+        text = (
+            "Let me think about this carefully and examine the current workspace.\n\n"
+            "Let me plan:\n1. Check environment and dependencies.\n\n"
+            "Wait, reconsidering the execution order.\n\n"
+            "My plan is:\n1. Check python version and pip list.\n\n"
+            "Actually wait, let me rethink.\n\n"
+            "Here is the plan:\n1. Run the test suite.\n\n"
+            "Wait, let me reconsider the whole strategy again.\n"
+        )
+        is_loop, reason = scorer.check_text_repetition(text)
+        self.assertTrue(is_loop)
+        self.assertIn("LongCat-2.5", reason)
+
+    def test_action_initiation_pattern_immunity(self):
+        """测试口头行动宣告与工具前瞻 (例如 Let me run/I'll use/开始执行) 的防误杀豁免"""
+        guard = LongCatReasoningGuard(min_reasoning_chars=200)
+        text = (
+            "I have analyzed the environment and reviewed the dependencies.\n\n"
+            "Now let me start exploring. Let me check the current directory and python version.\n"
+            "I'll use pwsh to check."
+        )
+        self.assertTrue(guard.is_action_ready(text))
+        is_loop, reason = guard.inspect(text)
+        self.assertFalse(is_loop)
+        self.assertIsNone(reason)
+
+    def test_deep_reasoning_negative_sample_immunity(self):
+        """自包含高难度负样本测试: 深度多段推导且末尾行动就绪时，必须 100% 安全放行"""
+        guard = LongCatReasoningGuard(min_reasoning_chars=1000)
+        reasoning_paragraphs = [
+            "Analyzing the runtime requirements for non-ASCII directory paths on Windows.",
+            "MediaPipe 0.10 C++ framework bindings load internal module models relative to site-packages.",
+            "If the interpreter runs within a Chinese directory path, std::ifstream may encounter ANSI mismatch.",
+            "Let me consider whether a symlink or short 8.3 path can resolve the issue without changing working dir.",
+            "Examining Python 3.11 compatibility with Tsinghua wheel distributions.",
+            "Now let me start exploring. Let me check the environment:\n"
+            "- Current working directory\n"
+            "- Python executable version\n"
+            "- Available pip packages\n"
+            "I will run pwsh to inspect the environment."
+        ]
+        text = "\n\n".join(reasoning_paragraphs)
+        is_loop, reason = guard.inspect(text)
+        self.assertFalse(is_loop, f"Full inspection false positive: {reason}")
+
+        guard.reset()
+        for i in range(0, len(text), 40):
+            h, r = guard.feed(text[i:i+40])
+            self.assertFalse(h, f"Streaming feed false positive at {i}: {r}")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('config.yaml', '.'), ('longcat_sentinel/web/dashboard.html', 'longcat_sentinel/web'), ('mmexport1790941560209.jpg', '.')],
+    datas=[('config.yaml', '.'), ('longcat_sentinel/web/dashboard.html', 'longcat_sentinel/web')],
     hiddenimports=[
         'uvicorn', 'uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto',
         'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto',
@@ -17,6 +17,7 @@ a = Analysis(
         'longcat_sentinel.server',
         'longcat_sentinel.breaker', 'longcat_sentinel.breaker.compliant_injector',
         'longcat_sentinel.detector', 'longcat_sentinel.detector.capability_manifest',
+        'longcat_sentinel.detector.longcat_reasoning_guard',
         'longcat_sentinel.detector.loop_scorer',
         'longcat_sentinel.detector.parallel_tool_tracker',
         'longcat_sentinel.detector.ring_buffer',

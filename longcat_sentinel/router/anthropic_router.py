@@ -194,6 +194,7 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
         block_types: Dict[int, str] = {}
 
         think_chars = 0
+        hard_think_cap = max(int(profile.max_think_chars * 2), 32000)
         tripped = False
         stream_finished_normally = False
         trip_reason: Optional[str] = None
@@ -271,28 +272,39 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
                                 if text:
                                     if delta_type == "thinking_delta":
                                         think_chars += len(text)
-                                        if (
-                                            profile.think_loop_enabled
-                                            and think_chars > profile.max_think_chars
-                                        ):
-                                            tripped = True
-                                            trip_reason = (
-                                                f"思考链超长 ({think_chars} > "
-                                                f"{profile.max_think_chars} chars)"
-                                            )
-                                            trip_tier = "READ_ONLY"
 
                                     if not tripped:
                                         ring.write(text)
-                                        if delta_type == "text_delta" or (
-                                            delta_type == "thinking_delta"
-                                            and profile.think_loop_enabled
-                                        ):
+                                        if delta_type == "text_delta":
                                             is_loop, reason = scorer.feed(text)
                                             if is_loop:
                                                 tripped = True
                                                 trip_reason = reason
                                                 trip_tier = "READ_ONLY"
+                                        elif (
+                                            delta_type == "thinking_delta"
+                                            and profile.think_loop_enabled
+                                        ):
+                                            is_loop, reason = scorer.feed(text)
+                                            if is_loop:
+                                                # 行动就绪防误杀：如果在死循环边缘，但尾部明确表明即将落地工具，且非自认死循环
+                                                tail_ready = scorer.longcat_guard.is_action_ready(scorer.longcat_guard._tail_window)
+                                                if tail_ready and "Self-acknowledged" not in str(reason):
+                                                    pass
+                                                else:
+                                                    tripped = True
+                                                    trip_reason = reason
+                                                    trip_tier = "READ_ONLY"
+                                            elif think_chars > hard_think_cap:
+                                                # 极端超长兜底保护：仅当超过极端安全硬上限且未处于行动就绪状态时才截断
+                                                tail_ready = scorer.longcat_guard.is_action_ready(scorer.longcat_guard._tail_window)
+                                                if not tail_ready:
+                                                    tripped = True
+                                                    trip_reason = (
+                                                        f"思考链达到极端安全上限保护 ({think_chars} > "
+                                                        f"{hard_think_cap} chars)"
+                                                    )
+                                                    trip_tier = "READ_ONLY"
 
                         if tripped:
                             metrics.record_circuit_trip(

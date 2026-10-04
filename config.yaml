@@ -63,21 +63,61 @@ tool_guard:
   action_on_destructive: "block_and_freeze"
 
 profiles:
-  # 1. 代码生成与 Agent 推荐模式（防误杀调优）
+  # 1. 自适应敏捷早停模式（默认推荐：长段落/自白快速识别，防误杀调优）
   code_agent:
     min_period_chars: 16                # 最小周期长度（低于此长度的代码缩进、标点被免疫过滤）
-    repeat_threshold: 4                 # 连续重复出现次数阈值
+    repeat_threshold: 4                 # 连续重复出现次数阈值（保持 4 防止代码缩进误杀）
     window_chars: 4000                  # 滑动监控字符窗口大小
     fuzzy_enabled: true
     fuzzy_similarity_ratio: 0.85        # 模糊相似度阈值 (0.0 ~ 1.0)
     fuzzy_repeat_threshold: 4
+    max_period_chars: 2000              # 宏观长周期检测上限（消除 200 字符盲区）
+    block_loop_enabled: true            # 开启段落/大块代码级语义哈希循环检测
+    block_repeat_threshold: 2           # 相同语义大块复现 2 次即判定循环
+    min_block_chars: 25                 # 语义块最小字符数
+    self_loop_heuristics_enabled: true  # 开启思考链反刍/自白死循环识别 (如 stop this loop)
+    self_loop_threshold: 3              # 自白死循环特征词出现 3 次即刻熔断
     tool_loop_enabled: true
     max_duplicate_tool_calls: 3         # 相同工具且相同参数的最大连续调用次数
     tool_cycle_window: 8                # 检测 A->B->A->B 乒乓循环的滑动窗口深度
+    tool_skeleton_enabled: true         # 开启命令骨架泛化（识别微调搜索后缀与管道的同义空转）
+    max_duplicate_skeleton_calls: 3     # 同义命令骨架调用阈值（设为 3 防误杀）
     think_loop_enabled: true
-    max_think_chars: 16000              # 思考链最大保护字符数
+    max_think_chars: 32000              # 思考链最大保护字符数（调优至 32000，充分保障万亿 MoE 深度推理不被误杀）
+    longcat_reasoning_guard_enabled: true # 美团 LongCat 递归思考与元反思震荡守卫 (1:1 专属特化)
+    longcat_plan_churn_threshold: 3       # 计划推倒重拟阈值 (3 次未执行即熔断，节省 60%+ Token)
+    longcat_second_guessing_threshold: 3  # 自我怀疑推翻打断阈值 (3 次即熔断)
+    longcat_constraint_threshold: 5       # 冲突约束偏执咀嚼阈值
+    longcat_min_reasoning_chars: 3500     # 思考链累积最小激活门槛 (低于 3500 字符 100% 豁免防误杀)
 
-  # 2. 严格抗循环模式
+  # 2. 极度激进模式（极致 Token 节约，秒级掐断死循环）
+  ultra_aggressive:
+    min_period_chars: 12
+    repeat_threshold: 2
+    window_chars: 3000
+    fuzzy_enabled: true
+    fuzzy_similarity_ratio: 0.80
+    fuzzy_repeat_threshold: 2
+    max_period_chars: 2000
+    block_loop_enabled: true
+    block_repeat_threshold: 2
+    min_block_chars: 20
+    self_loop_heuristics_enabled: true
+    self_loop_threshold: 2
+    tool_loop_enabled: true
+    max_duplicate_tool_calls: 2
+    tool_cycle_window: 6
+    tool_skeleton_enabled: true
+    max_duplicate_skeleton_calls: 2
+    think_loop_enabled: true
+    max_think_chars: 16000
+    longcat_reasoning_guard_enabled: true
+    longcat_plan_churn_threshold: 2
+    longcat_second_guessing_threshold: 2
+    longcat_constraint_threshold: 4
+    longcat_min_reasoning_chars: 3000
+
+  # 3. 严格抗循环模式
   strict:
     min_period_chars: 12
     repeat_threshold: 3
@@ -85,13 +125,26 @@ profiles:
     fuzzy_enabled: true
     fuzzy_similarity_ratio: 0.80
     fuzzy_repeat_threshold: 3
+    max_period_chars: 2000
+    block_loop_enabled: true
+    block_repeat_threshold: 2
+    min_block_chars: 25
+    self_loop_heuristics_enabled: true
+    self_loop_threshold: 3
     tool_loop_enabled: true
     max_duplicate_tool_calls: 2
     tool_cycle_window: 6
+    tool_skeleton_enabled: true
+    max_duplicate_skeleton_calls: 2
     think_loop_enabled: true
-    max_think_chars: 10000
+    max_think_chars: 24000
+    longcat_reasoning_guard_enabled: true
+    longcat_plan_churn_threshold: 3
+    longcat_second_guessing_threshold: 3
+    longcat_constraint_threshold: 5
+    longcat_min_reasoning_chars: 3500
 
-  # 3. 平衡模式
+  # 4. 平衡模式
   balanced:
     min_period_chars: 14
     repeat_threshold: 3
@@ -99,11 +152,24 @@ profiles:
     fuzzy_enabled: true
     fuzzy_similarity_ratio: 0.82
     fuzzy_repeat_threshold: 3
+    max_period_chars: 2000
+    block_loop_enabled: true
+    block_repeat_threshold: 3
+    min_block_chars: 25
+    self_loop_heuristics_enabled: true
+    self_loop_threshold: 3
     tool_loop_enabled: true
     max_duplicate_tool_calls: 3
     tool_cycle_window: 8
+    tool_skeleton_enabled: true
+    max_duplicate_skeleton_calls: 3
     think_loop_enabled: true
-    max_think_chars: 12000
+    max_think_chars: 32000
+    longcat_reasoning_guard_enabled: true
+    longcat_plan_churn_threshold: 3
+    longcat_second_guessing_threshold: 4
+    longcat_constraint_threshold: 6
+    longcat_min_reasoning_chars: 4000
 
 immunity:
   ignore_whitespaces: true

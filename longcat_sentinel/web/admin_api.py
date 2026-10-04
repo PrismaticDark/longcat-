@@ -89,9 +89,9 @@ async def get_config(request: Request, _admin: str = Depends(verify_admin_auth))
 
     return {
         "api_key_configured": bool(raw_key),
-        "api_key": raw_key,
         "masked_api_key": masked_key,
-        "gateway_token": gateway_tok,
+        "admin_token": "[REDACTED]",
+        "gateway_token": "[REDACTED]",
         "upstream_url": config.upstream.base_url,
         "default_model": config.upstream.default_model,
         "active_profile": config.breaker.active_profile,

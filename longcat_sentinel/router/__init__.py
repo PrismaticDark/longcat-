@@ -73,6 +73,17 @@ def build_scorer(profile: ProfileConfig, immunity=None) -> LoopScorer:
         fuzzy_enabled=profile.fuzzy_enabled,
         fuzzy_similarity_ratio=profile.fuzzy_similarity_ratio,
         fuzzy_repeat_threshold=profile.fuzzy_repeat_threshold,
+        max_period=profile.max_period_chars,
+        block_loop_enabled=profile.block_loop_enabled,
+        block_repeat_threshold=profile.block_repeat_threshold,
+        min_block_chars=profile.min_block_chars,
+        self_loop_heuristics_enabled=profile.self_loop_heuristics_enabled,
+        self_loop_threshold=profile.self_loop_threshold,
+        longcat_reasoning_guard_enabled=profile.longcat_reasoning_guard_enabled,
+        longcat_plan_churn_threshold=profile.longcat_plan_churn_threshold,
+        longcat_second_guessing_threshold=profile.longcat_second_guessing_threshold,
+        longcat_constraint_threshold=profile.longcat_constraint_threshold,
+        longcat_min_reasoning_chars=profile.longcat_min_reasoning_chars,
         code_block_multiplier=(
             immunity.code_block_multiplier if immunity is not None else 1.5
         ),
@@ -101,6 +112,8 @@ def build_tool_guard(config: GatewayConfig, profile: ProfileConfig) -> ToolLoopG
         cycle_window=profile.tool_cycle_window,
         freeze_on_destructive=config.tool_guard.action_on_destructive
         == "block_and_freeze",
+        tool_skeleton_enabled=profile.tool_skeleton_enabled,
+        max_duplicate_skeleton_calls=profile.max_duplicate_skeleton_calls,
     )
 
 
