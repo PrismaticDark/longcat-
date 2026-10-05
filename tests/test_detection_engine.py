@@ -996,5 +996,65 @@ class TestLongCatReasoningGuard(unittest.TestCase):
         self.assertIn("LongCat-2.5", reason)
 
 
+class TestSelfLoopHeuristicsAntiFalsePositive(unittest.TestCase):
+    """TC-UNIT-340: Regression tests for self-loop heuristics false positives and early interception."""
+
+    def test_user_query_repetition_does_not_trip_guard(self):
+        """事故复现回归: 用户提问复述 '检查模型是否陷入死循环' 绝不能被秒杀"""
+        guard = LongCatReasoningGuard(min_reasoning_chars=3500, self_loop_threshold=3)
+        chunks = [
+            "\n",
+            "用户",
+            "给",
+            "了一个zip",
+            "文件路径，需要",
+            "解压并分析其中的",
+            "会话日志，",
+            "检查模型是否",
+            "陷入死循环",
+            "并排查原因。",
+        ]
+        for chunk in chunks:
+            tripped, reason = guard.feed(chunk)
+            self.assertFalse(tripped, f"False positive on user query recap: {reason}")
+        tripped, reason = guard.flush()
+        self.assertFalse(tripped, f"Flush false positive on user query recap: {reason}")
+
+    def test_negation_and_error_citation_does_not_trip_guard(self):
+        """事故复现回归: 思考链引用上一轮 Sentinel 提示与否定自白 ('实际上并没有陷入死循环') 绝不能被秒杀"""
+        guard = LongCatReasoningGuard(min_reasoning_chars=3500, self_loop_threshold=3)
+        text = (
+            '用户说"什么鬼"，是因为之前我的回复被 Sentinel 保护性中断了，'
+            '显示了一段关于"检测到输出内容/思考链陷入高频周期循环"的消息。'
+            '这看起来像是一个误报——我实际上并没有陷入死循环。'
+        )
+        for i in range(0, len(text), 15):
+            chunk = text[i : i + 15]
+            tripped, reason = guard.feed(chunk)
+            self.assertFalse(tripped, f"False positive on error citation / negation at chunk '{chunk}': {reason}")
+        tripped, reason = guard.flush()
+        self.assertFalse(tripped, f"Flush false positive: {reason}")
+
+    def test_genuine_self_loop_trips_early_without_min_reasoning_chars(self):
+        """早期截断能力保证: 真正的自认打转死循环达到阈值时，即使远低于 min_reasoning_chars 也能极速拦截"""
+        guard = LongCatReasoningGuard(min_reasoning_chars=3500, self_loop_threshold=3)
+        looping_chunks = [
+            "思考中... 糟糕，我好像陷入了死循环。\n",
+            "让我换个思路尝试重新分析。\n",
+            "不对，我发现自己一直在死循环原地打转，必须停止死循环！\n",
+        ]
+        tripped = False
+        trip_reason = None
+        for chunk in looping_chunks:
+            t, r = guard.feed(chunk)
+            if t:
+                tripped = True
+                trip_reason = r
+                break
+        self.assertTrue(tripped, "Genuine self-acknowledgment loop failed to trip early!")
+        self.assertIn("Self-acknowledged loop detected", trip_reason)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+

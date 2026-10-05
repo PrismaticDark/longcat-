@@ -104,14 +104,66 @@ _HESITATION_PATTERNS = [
     re.compile(r"(?:等等，其实|不过等等|等一下|仔细一想|不对，等等|等等，难道|或者等等)", re.IGNORECASE),
 ]
 
-# 思考链自认陷入死循环特征
+# 思考链自认陷入死循环特征模式 (包含明确第一人称自白与反刍纠错特征)
 _SELF_LOOP_PATTERNS = [
     re.compile(
-        r"\b(?:going\s+in\s+circles|stuck\s+in\s+a\s+loop|stop\s+this\s+loop)\b",
+        r"\b(?:stop\s+this\s+loop|stuck\s+in\s+a\s+loop|going\s+in\s+circles)\b",
         re.IGNORECASE,
     ),
-    re.compile(r"(?:陷入死循环|原地打转|停止死循环)"),
+    re.compile(
+        r"\b(?:i\s+am|i'm|we\s+are|we're)\s+(?:stuck|looping|going\s+in\s+circles)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:completely\s+different\s+approach|reconsider\s+the\s+problem|take\s+a\s+concrete\s+action)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"(?:陷入(?:了)?死循环|自己在打转|一直在死循环|原地打转)"),
+    re.compile(r"(?:让我换个思路|换个思路尝试|必须换个思路)"),
+    re.compile(r"(?:重新审视(?:这个问题|整体思路)|重新审视自己的方案)"),
+    re.compile(r"(?:停止(?:这个)?(?:死)?循环|不能再(?:这样)?循环下去)"),
 ]
+
+# 否定、疑问、代码实体、外部引述、错误/系统提示排除前缀正则
+_SELF_LOOP_EXCLUSION_PREFIX_RE = re.compile(
+    r"(?:"
+    r"没有|没|并未|并不是|并非|不是|不会|不用|无须|无需|避免|防止|免于|"  # 中文否定
+    r"是否|是不是|能否|会否|有没有|"                             # 中文疑问/假设
+    r"检查|排查|分析|判断|查看|定位|关于|"                         # 中文动作/主题分析
+    r"用户|主人|提问|询问|问|说|"                                 # 中文外部引述
+    r"提示|报错|警告|拦截|中断|消息|"                              # 中文错误/系统提示
+    r"代码|程序|算法|函数|进程|线程|while|for|"                    # 代码实体
+    r"not\s+|never\s+|avoid\s+|prevent\s+|check\s+if\s+|"        # 英文否定/检查
+    r"whether\s+|user\s+(?:asked|said|wants)\s+|error\s+|warning\s+"  # 英文外部引述/报错
+    r")\s*(?:(?:实际上|似乎|可能|会|已|经|针对|对于|actually|really|probably)\s*)*$",
+    re.IGNORECASE,
+)
+
+
+def is_valid_self_loop_match(text: str, start: int, end: int) -> bool:
+    """
+    精确语义语境校验：排除否定句、用户问题复述、代码分析、引用系统提示等误报。
+    """
+    prefix = text[max(0, start - 40):start]
+
+    # 1. 检查是否在引号中（引用上一轮系统报错或用户原话）
+    extended_prefix = text[max(0, start - 60):start]
+    for q_open, q_close in [('"', '"'), ("'", "'"), ('“', '”'), ('‘', '’')]:
+        last_open = extended_prefix.rfind(q_open)
+        last_close = extended_prefix.rfind(q_close)
+        if last_open != -1 and last_open > last_close:
+            return False
+
+    # 2. 检查前缀是否有否定、疑问、代码分析、用户引述、报错引用
+    if _SELF_LOOP_EXCLUSION_PREFIX_RE.search(prefix):
+        return False
+
+    # 3. 检查匹配点紧邻后方是否跟随疑问标记（例如 "陷入死循环？" 或 "陷入死循环吗"）
+    suffix = text[end:min(len(text), end + 10)]
+    if re.match(r"^\s*(?:\?|？|吗|呢|否)", suffix):
+        return False
+
+    return True
 
 
 class LongCatReasoningGuard:
@@ -123,6 +175,8 @@ class LongCatReasoningGuard:
     2. 认知停滞死锁 (Cognitive Stalling & Deliberation Loop):
        - 纯高频犹疑打断自旋 (Hesitation Loop: 干净单边信号，多次犹疑纠结未落地行动);
        - 知识/记忆反刍检索与犹疑交织自旋 (Memory Deliberation Loop).
+    3. 自认死循环特征 (Self-acknowledged loop detected):
+       - 结合语境有效性过滤与阈值判定，杜绝否定句、用户复述及代码分析误杀。
     """
 
     def __init__(
@@ -135,6 +189,7 @@ class LongCatReasoningGuard:
         memory_search_threshold: int = 6,
         hesitation_threshold: int = 5,
         standalone_hesitation_threshold: int = 6,
+        self_loop_threshold: int = 3,
     ):
         self.enabled = bool(enabled)
         self.plan_churn_threshold = max(2, int(plan_churn_threshold))
@@ -144,6 +199,7 @@ class LongCatReasoningGuard:
         self.memory_search_threshold = max(3, int(memory_search_threshold))
         self.hesitation_threshold = max(2, int(hesitation_threshold))
         self.standalone_hesitation_threshold = max(2, int(standalone_hesitation_threshold))
+        self.self_loop_threshold = max(1, int(self_loop_threshold))
 
         self.reset()
 
@@ -157,6 +213,8 @@ class LongCatReasoningGuard:
         self.memory_search_count: int = 0
         self.hesitation_count: int = 0
         self.question_count: int = 0
+        self.self_loop_count: int = 0
+        self.self_loop_samples: List[str] = []
         self._buffer: str = ""
         self._tail_window: str = ""
         self._scanned_chars: int = 0
@@ -164,6 +222,7 @@ class LongCatReasoningGuard:
         self._matched_abandon_offsets: set[int] = set()
         self._matched_mem_offsets: set[int] = set()
         self._matched_hes_offsets: set[int] = set()
+        self._matched_self_loop_offsets: set[int] = set()
 
     def _scan_buffer(self, force: bool = False) -> Tuple[bool, Optional[str]]:
         """
@@ -182,9 +241,23 @@ class LongCatReasoningGuard:
         scan_slice = self._buffer[scan_start:]
         base_abs = self.total_chars - buf_len + scan_start
 
-        # 检查自认死循环
-        if any(pat.search(scan_slice) for pat in _SELF_LOOP_PATTERNS):
-            return True, "LongCat-2.5 思考链明确自认陷入死循环 (Self-acknowledged loop detected)"
+        # 检查自认死循环 (带精确语境校验与累积阈值，毫秒级掐断真实死锁并杜绝误杀)
+        for pat in _SELF_LOOP_PATTERNS:
+            for m in pat.finditer(scan_slice):
+                abs_pos = base_abs + m.start()
+                if abs_pos not in self._matched_self_loop_offsets:
+                    local_start = scan_start + m.start()
+                    local_end = scan_start + m.end()
+                    if is_valid_self_loop_match(self._buffer, local_start, local_end):
+                        self._matched_self_loop_offsets.add(abs_pos)
+                        self.self_loop_count += 1
+                        self.self_loop_samples.append(m.group()[:60].replace("\n", " "))
+                        if self.self_loop_count >= self.self_loop_threshold:
+                            sample = self.self_loop_samples[0]
+                            return True, (
+                                f"LongCat-2.5 思考链明确自认陷入死循环 (Self-acknowledged loop detected, "
+                                f"{self.self_loop_count}x self-corrections): '{sample}'"
+                            )
 
         for pat in _PLAN_CHURN_PATTERNS:
             for m in pat.finditer(scan_slice):
@@ -228,6 +301,7 @@ class LongCatReasoningGuard:
             self._matched_abandon_offsets = {p for p in self._matched_abandon_offsets if p >= min_keep}
             self._matched_mem_offsets = {p for p in self._matched_mem_offsets if p >= min_keep}
             self._matched_hes_offsets = {p for p in self._matched_hes_offsets if p >= min_keep}
+            self._matched_self_loop_offsets = {p for p in self._matched_self_loop_offsets if p >= min_keep}
 
         return False, None
 
@@ -244,12 +318,9 @@ class LongCatReasoningGuard:
         self._tail_window = (self._tail_window + chunk)[-2000:]
         self.question_count += chunk.count("?")
 
-        # 优先极速自认死循环检测
-        if any(pat.search(self._tail_window) for pat in _SELF_LOOP_PATTERNS):
-            return True, "LongCat-2.5 思考链明确自认陷入死循环 (Self-acknowledged loop detected)"
-
-        # 增量扫描 buffer
-        is_self_loop, reason = self._scan_buffer(force=False)
+        # 遇到潜在自认特征时强制立即精确扫描，确保毫秒级极速响应
+        has_potential_self_loop = any(pat.search(self._tail_window) for pat in _SELF_LOOP_PATTERNS)
+        is_self_loop, reason = self._scan_buffer(force=has_potential_self_loop)
         if is_self_loop:
             return True, reason
 
@@ -291,6 +362,7 @@ class LongCatReasoningGuard:
             memory_search_threshold=self.memory_search_threshold,
             hesitation_threshold=self.hesitation_threshold,
             standalone_hesitation_threshold=self.standalone_hesitation_threshold,
+            self_loop_threshold=self.self_loop_threshold,
         )
         is_loop, reason = g.feed(text)
         if is_loop:

@@ -32,20 +32,11 @@ _SEPARATOR_LINE_RE = re.compile(r"(?m)^[ \t]*(?:-{3,}|={3,}|\*{3,}|_{3,})[ \t]*$
 _MULTI_SPACE_RE = re.compile(r"[ \t]{2,}")
 
 
-from .longcat_reasoning_guard import LongCatReasoningGuard
-
-_SELF_LOOP_PATTERNS = [
-    re.compile(r"\bstop\s+this\s+loop\b", re.IGNORECASE),
-    re.compile(r"\bgoing\s+in\s+circles\b", re.IGNORECASE),
-    re.compile(r"\bstuck\s+in\s+a\s+loop\b", re.IGNORECASE),
-    re.compile(r"\bcompletely\s+different\s+approach\b", re.IGNORECASE),
-    re.compile(r"\breconsider\s+the\s+problem\b", re.IGNORECASE),
-    re.compile(r"\btake\s+a\s+concrete\s+action\b", re.IGNORECASE),
-    re.compile(r"(?:陷入(?:了)?死循环|自己在打转|一直在死循环)"),
-    re.compile(r"(?:让我换个思路|换个思路尝试|必须换个思路)"),
-    re.compile(r"(?:重新审视(?:这个问题|整体思路)|重新审视自己的方案)"),
-    re.compile(r"(?:停止(?:这个)?循环|不能再循环下去)"),
-]
+from .longcat_reasoning_guard import (
+    LongCatReasoningGuard,
+    _SELF_LOOP_PATTERNS,
+    is_valid_self_loop_match,
+)
 
 
 class LoopScorer:
@@ -105,6 +96,7 @@ class LoopScorer:
             memory_search_threshold=longcat_memory_search_threshold,
             hesitation_threshold=longcat_hesitation_threshold,
             standalone_hesitation_threshold=longcat_standalone_hesitation_threshold,
+            self_loop_threshold=self.self_loop_threshold,
         )
 
         self.last_tool_outputs: List[str] = []
@@ -241,20 +233,20 @@ class LoopScorer:
         return False, None
 
     def _check_self_loop(self, text: str) -> Tuple[bool, Optional[str]]:
-        """检测模型在思考链中频繁自认陷入死循环或反复自我纠错打转的语义特征"""
+        """检测模型在思考链中频繁自认陷入死循环或反复自我纠错打转的语义特征 (结合语境防误杀)"""
         total_hits = 0
         matched_samples: List[str] = []
         for pat in _SELF_LOOP_PATTERNS:
-            matches = pat.findall(text)
-            if matches:
-                total_hits += len(matches)
-                matched_samples.append(str(matches[0]))
-                if total_hits >= self.self_loop_threshold:
-                    sample = matched_samples[0]
-                    return True, (
-                        f"Thinking loop self-acknowledgment detected ({total_hits}x self-correction phrases): "
-                        f"'{sample}'"
-                    )
+            for m in pat.finditer(text):
+                if is_valid_self_loop_match(text, m.start(), m.end()):
+                    total_hits += 1
+                    matched_samples.append(str(m.group()))
+                    if total_hits >= self.self_loop_threshold:
+                        sample = matched_samples[0]
+                        return True, (
+                            f"Thinking loop self-acknowledgment detected ({total_hits}x self-correction phrases): "
+                            f"'{sample}'"
+                        )
         return False, None
 
     def _check_macro_blocks(self, text: str) -> Tuple[bool, Optional[str]]:
