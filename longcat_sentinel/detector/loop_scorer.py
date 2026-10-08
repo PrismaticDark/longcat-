@@ -193,13 +193,16 @@ class LoopScorer:
         if len(stripped) < self.min_period * required_repeats:
             return False, None
 
-        multiplier = self.code_block_multiplier if (text.count("```") % 2 != 0) else 1.0
+        is_in_code = (text.count("```") % 2 != 0)
+        multiplier = self.code_block_multiplier if is_in_code else 1.0
         effective_min = max(1, int(self.min_period * multiplier))
+        effective_repeat = max(self.repeat_threshold, int(self.repeat_threshold * multiplier)) if is_in_code else self.repeat_threshold
+        effective_fuzzy_repeat = max(self.fuzzy_repeat_threshold, int(self.fuzzy_repeat_threshold * multiplier)) if is_in_code else self.fuzzy_repeat_threshold
         n = len(clean)
 
-        divisor = self.repeat_threshold
+        divisor = effective_repeat
         if self.fuzzy_enabled:
-            divisor = min(divisor, self.fuzzy_repeat_threshold)
+            divisor = min(divisor, effective_fuzzy_repeat)
         divisor = max(2, divisor)
 
         upper = min(self.max_period, n // divisor)
@@ -216,21 +219,62 @@ class LoopScorer:
             while idx >= 0 and clean[idx:idx + p_len] == chunk:
                 count += 1
                 idx -= p_len
-                if count >= self.repeat_threshold:
+                if count >= effective_repeat:
                     return True, (
                         f"N-gram period repeat ({count}x of length {p_len}): "
                         f"'{chunk[:30]}...'"
                     )
 
-            if self.fuzzy_enabled and self.fuzzy_repeat_threshold <= n // p_len:
-                fuzzy_count = self._fuzzy_run(clean, chunk, p_len)
-                if fuzzy_count >= self.fuzzy_repeat_threshold:
-                    return True, (
-                        f"Fuzzy N-gram repeat ({fuzzy_count}x of length {p_len}, "
-                        f"similarity>={self.fuzzy_similarity_ratio}): '{chunk[:30]}...'"
-                    )
+            if self.fuzzy_enabled and effective_fuzzy_repeat <= n // p_len:
+                fuzzy_count, matched_chunks = self._fuzzy_run(clean, chunk, p_len)
+                if fuzzy_count >= effective_fuzzy_repeat:
+                    if not self._is_structured_progression(matched_chunks):
+                        return True, (
+                            f"Fuzzy N-gram repeat ({fuzzy_count}x of length {p_len}, "
+                            f"similarity>={self.fuzzy_similarity_ratio}): '{chunk[:30]}...'"
+                        )
 
         return False, None
+
+    def _is_structured_progression(self, chunks: List[str]) -> bool:
+        """
+        Anti-False-Positive Invariant:
+        Determines whether a sequence of similar chunks represents legitimate
+        structured list items, table rows, progressive numbering, or diverse tokens,
+        rather than degenerate textual repetition loops.
+        """
+        if len(chunks) < 2:
+            return False
+
+        # 1. 严格全同字符串属于真实死循环重复
+        if len(set(chunks)) == 1:
+            return False
+
+        # 2. Markdown / 文本列表与表格标记识别 (- item, * item, 1. item, | col |)
+        list_marker_re = re.compile(r"^[ \t]*(?:[-*+•]|\d+[\.)]|- \[[ xX]\]|\|)[ \t]*")
+        is_list_items = [bool(list_marker_re.match(c.lstrip(" \t\r\n"))) for c in chunks]
+        if all(is_list_items):
+            return True
+
+        # 3. 序列化数值或单调变化检查 (例如 Book 2, Book 3, 步骤 1, 步骤 2 等)
+        num_re = re.compile(r"\b\d+\b")
+        nums_per_chunk = [num_re.findall(c) for c in chunks]
+        if all(len(nums) > 0 for nums in nums_per_chunk):
+            num_signatures = [tuple(nums) for nums in nums_per_chunk]
+            if len(set(num_signatures)) >= len(chunks) - 1:
+                return True
+
+        # 4. 实体词汇多样性与信息熵检查 (排除仅仅由于标点变动的真实死循环)
+        token_sets = [set(re.findall(r"[\w]+", c.lower())) for c in chunks]
+        if all(len(ts) >= 2 for ts in token_sets):
+            all_tokens = set.union(*token_sets)
+            common_tokens = set.intersection(*token_sets)
+            unique_tokens = all_tokens - common_tokens
+            distinct_chunk_count = sum(1 for ts in token_sets if len(ts - common_tokens) >= 1)
+            if distinct_chunk_count >= len(chunks) - 1 and len(unique_tokens) >= len(chunks):
+                return True
+
+        return False
 
     def _check_self_loop(self, text: str) -> Tuple[bool, Optional[str]]:
         """检测模型在思考链中频繁自认陷入死循环或反复自我纠错打转的语义特征 (结合语境防误杀)"""
@@ -253,8 +297,11 @@ class LoopScorer:
         """检测段落级、大块代码级长周期循环 ($A -> B -> A -> B$ 或重复段落)"""
         # 优先按双换行分段，若长文本未规范双换行则按单换行且具备实质长度的行分块
         raw_paras = [p.strip() for p in text.split("\n\n") if len(p.strip()) >= self.min_block_chars]
-        if len(raw_paras) < 2:
-            raw_paras = [p.strip() for p in text.split("\n") if len(p.strip()) >= self.min_block_chars]
+        is_double_newline = len(raw_paras) >= 2
+        if not is_double_newline:
+            # 单换行切分时，必须具备实质单行段落长度 (>= 80 字符)，防止短单句重复被误杀
+            min_line_chars = max(self.min_block_chars, 80)
+            raw_paras = [p.strip() for p in text.split("\n") if len(p.strip()) >= min_line_chars]
 
         if len(raw_paras) < 2:
             return False, None
@@ -263,8 +310,11 @@ class LoopScorer:
         # 若处于代码块内部（未闭合三反引号）或通过单换行切分，则提高重复容忍门槛防止代码模板/表格误杀
         is_in_code = (text.count("```") % 2 != 0)
         effective_repeat_threshold = self.block_repeat_threshold
-        if is_in_code:
-            effective_repeat_threshold = max(effective_repeat_threshold + 1, int(effective_repeat_threshold * self.code_block_multiplier))
+        if is_in_code or not is_double_newline:
+            effective_repeat_threshold = max(
+                effective_repeat_threshold + 1,
+                int(effective_repeat_threshold * self.code_block_multiplier),
+            )
 
         seen: dict[str, int] = {}
         for p in raw_paras:
@@ -299,18 +349,18 @@ class LoopScorer:
             text = _MULTI_SPACE_RE.sub(" ", text)
         return text
 
-    def _fuzzy_run(self, clean: str, chunk: str, p_len: int) -> int:
+    def _fuzzy_run(self, clean: str, chunk: str, p_len: int) -> Tuple[int, List[str]]:
         """Counts consecutive preceding blocks similar to `chunk` (>= configured ratio)."""
-        count = 1
+        matched = [chunk]
         idx = len(clean) - p_len * 2
         while idx >= 0:
             candidate = clean[idx:idx + p_len]
             if candidate == chunk or _ratio(candidate, chunk) >= self.fuzzy_similarity_ratio:
-                count += 1
+                matched.append(candidate)
                 idx -= p_len
             else:
                 break
-        return count
+        return len(matched), matched
 
     # -- legacy tool-state scoring (kept for API compatibility) ---------------
     def evaluate_tool_state(

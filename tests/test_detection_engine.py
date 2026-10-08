@@ -1054,6 +1054,71 @@ class TestSelfLoopHeuristicsAntiFalsePositive(unittest.TestCase):
         self.assertTrue(tripped, "Genuine self-acknowledgment loop failed to trip early!")
         self.assertIn("Self-acknowledged loop detected", trip_reason)
 
+    def test_harry_potter_incident_structured_list_does_not_trip(self):
+        """事故复现回归: 章节比对列表 (Harry Potter 会话第 16 步) 绝不能被模糊 N-Gram 误杀"""
+        scorer = LoopScorer(
+            fuzzy_enabled=True,
+            fuzzy_similarity_ratio=0.85,
+            fuzzy_repeat_threshold=4,
+        )
+        incident_text = (
+            "I notice that some books have fewer chapters than expected. Let me check:\n"
+            "- Book 1: 17 chapters (correct - matches TOC)\n"
+            "- Book 2: 16 chapters (TOC shows 18 - missing 2)\n"
+            "- Book 3: 21 chapters (TOC shows 22 - missing 1)\n"
+            "- Book 4: 36 chapters (TOC shows 37 - missing 1)\n"
+            "- Book 5: 37 chapters (TOC shows 38 - missing 1)\n"
+            "- Book 6: 30 chapters (TOC shows 30 - matches TOC)\n"
+            "- Book 7: 36 chapters (TOC shows 37 - missing 1)\n"
+        )
+        tripped, reason = scorer.check_text_repetition(incident_text)
+        self.assertFalse(tripped, f"False positive on structured book comparison list: {reason}")
+
+    def test_markdown_checklist_and_tables_do_not_trip(self):
+        """测试 Markdown 清单与表格行不会因固定行长和类似句式被误杀"""
+        scorer = LoopScorer(fuzzy_enabled=True, fuzzy_similarity_ratio=0.85, fuzzy_repeat_threshold=4)
+        checklist_text = (
+            "任务清单如下：\n"
+            "- [ ] 步骤 01：下载数据集并核验哈希校验和\n"
+            "- [ ] 步骤 02：配置训练环境并载入预训练权重\n"
+            "- [ ] 步骤 03：启动微调流水线并记录指标日志\n"
+            "- [ ] 步骤 04：导出最终模型并执行端到端验证\n"
+        )
+        tripped, reason = scorer.check_text_repetition(checklist_text)
+        self.assertFalse(tripped, f"False positive on checklist: {reason}")
+
+        table_text = (
+            "| 01 | auth-service | RUNNING | 24ms |\n"
+            "| 02 | user-service | RUNNING | 31ms |\n"
+            "| 03 | cart-service | RUNNING | 19ms |\n"
+            "| 04 | pay-service  | RUNNING | 45ms |\n"
+        )
+        tripped, reason = scorer.check_text_repetition(table_text)
+        self.assertFalse(tripped, f"False positive on table rows: {reason}")
+
+    def test_macro_block_short_sentence_does_not_trip(self):
+        """测试单换行下的短单句重复两次绝不被 macro block 误杀"""
+        scorer = LoopScorer(block_loop_enabled=True, block_repeat_threshold=2, min_block_chars=25)
+        text = (
+            "I am reviewing the task now.\n"
+            "Let us examine the input parameters in detail.\n"
+            "I am reviewing the task now."
+        )
+        tripped, reason = scorer.check_text_repetition(text)
+        self.assertFalse(tripped, f"False positive on short sentence repeat: {reason}")
+
+    def test_exact_identical_list_items_still_trip(self):
+        """测试如果列表项完全相同（真死循环），依然能够准确熔断"""
+        scorer = LoopScorer(min_period=16, repeat_threshold=4)
+        exact_loop_text = (
+            "- Book 1: 17 chapters (correct - matches TOC)\n"
+            "- Book 1: 17 chapters (correct - matches TOC)\n"
+            "- Book 1: 17 chapters (correct - matches TOC)\n"
+            "- Book 1: 17 chapters (correct - matches TOC)\n"
+        )
+        tripped, reason = scorer.check_text_repetition(exact_loop_text)
+        self.assertTrue(tripped, "Exact identical list item loop was not caught!")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
