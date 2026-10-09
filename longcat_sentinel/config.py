@@ -293,8 +293,8 @@ class ProfileConfig(BaseModel):
     fuzzy_repeat_threshold: int = Field(default=4, ge=1)
     max_period_chars: int = Field(default=2000, ge=16)
     block_loop_enabled: bool = Field(default=True)
-    block_repeat_threshold: int = Field(default=2, ge=2)
-    min_block_chars: int = Field(default=25, ge=10)
+    block_repeat_threshold: int = Field(default=3, ge=2)
+    min_block_chars: int = Field(default=30, ge=10)
     self_loop_heuristics_enabled: bool = Field(default=True)
     self_loop_threshold: int = Field(default=3, ge=2)
     tool_loop_enabled: bool = Field(default=True)
@@ -308,10 +308,10 @@ class ProfileConfig(BaseModel):
     longcat_plan_churn_threshold: int = Field(default=3, ge=2)
     longcat_second_guessing_threshold: int = Field(default=3, ge=2)
     longcat_constraint_threshold: int = Field(default=5, ge=2)
-    longcat_min_reasoning_chars: int = Field(default=3500, ge=100)
-    longcat_memory_search_threshold: int = Field(default=6, ge=2)
-    longcat_hesitation_threshold: int = Field(default=5, ge=2)
-    longcat_standalone_hesitation_threshold: int = Field(default=6, ge=2)
+    longcat_min_reasoning_chars: int = Field(default=6000, ge=100)
+    longcat_memory_search_threshold: int = Field(default=8, ge=2)
+    longcat_hesitation_threshold: int = Field(default=8, ge=2)
+    longcat_standalone_hesitation_threshold: int = Field(default=10, ge=2)
 
 
 class BreakerConfig(BaseModel):

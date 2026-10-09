@@ -195,6 +195,7 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
         stream_finished_normally = False
         trip_reason: Optional[str] = None
         trip_tier = "READ_ONLY"
+        highest_tool_tier = "READ_ONLY"
 
         def fallback_finish_chunk() -> bytes:
             payload = {
@@ -208,10 +209,13 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
 
         def finalize_tool_calls() -> Optional[tuple]:
             """Finalizes every open tool call and returns the first violation found."""
+            nonlocal highest_tool_tier
             for index in tracker.get_open_indices():
                 instance = tracker.finish_tool(index)
                 if instance is None:
                     continue
+                if instance.safety_tier.value != "READ_ONLY":
+                    highest_tool_tier = instance.safety_tier.value
                 violation, reason = tool_guard.inspect(
                     instance.name, instance.arguments_buffer
                 )
@@ -301,6 +305,8 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                                     str(tool_call.get("id", "") or ""),
                                     str(function.get("name", "") or ""),
                                 )
+                                if instance and instance.safety_tier.value != "READ_ONLY":
+                                    highest_tool_tier = instance.safety_tier.value
                                 arguments_delta = function.get("arguments")
                                 if arguments_delta:
                                     instance.append_arguments(str(arguments_delta))
@@ -393,6 +399,11 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                 else:
                     stream_finished_normally = not tripped
 
+        except asyncio.CancelledError:
+            metrics.record_client_cancelled(
+                STREAM_BLOCK_LABEL, normalized_model, tool_tier=highest_tool_tier
+            )
+            raise
         except TimeoutError as exc:
             metrics.record_upstream_error(STREAM_BLOCK_LABEL, normalized_model, str(exc))
         except httpx.HTTPError as exc:
@@ -401,7 +412,13 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
             )
         finally:
             if stream_finished_normally and not tripped:
-                metrics.record_safe_completion(STREAM_BLOCK_LABEL, normalized_model)
+                score_desc = f"{scorer.current_score} / 100 (安全)"
+                metrics.record_safe_completion(
+                    STREAM_BLOCK_LABEL,
+                    normalized_model,
+                    tool_tier=highest_tool_tier,
+                    loop_score=score_desc,
+                )
             metrics.release_stream()
             await upstream_resp.aclose()
             await client.aclose()

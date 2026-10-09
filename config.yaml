@@ -73,8 +73,8 @@ profiles:
     fuzzy_repeat_threshold: 4
     max_period_chars: 2000              # 宏观长周期检测上限（消除 200 字符盲区）
     block_loop_enabled: true            # 开启段落/大块代码级语义哈希循环检测
-    block_repeat_threshold: 2           # 相同语义大块复现 2 次即判定循环
-    min_block_chars: 25                 # 语义块最小字符数
+    block_repeat_threshold: 3           # 相同语义大块复现 3 次判定循环（调优至 3 防代码模板误杀）
+    min_block_chars: 30                 # 语义块最小字符数
     self_loop_heuristics_enabled: true  # 开启思考链反刍/自白死循环识别 (如 stop this loop)
     self_loop_threshold: 3              # 自白死循环特征词出现 3 次即刻熔断
     tool_loop_enabled: true
@@ -83,15 +83,15 @@ profiles:
     tool_skeleton_enabled: true         # 开启命令骨架泛化（识别微调搜索后缀与管道的同义空转）
     max_duplicate_skeleton_calls: 3     # 同义命令骨架调用阈值（设为 3 防误杀）
     think_loop_enabled: true
-    max_think_chars: 32000              # 思考链最大保护字符数（调优至 32000，充分保障万亿 MoE 深度推理不被误杀）
+    max_think_chars: 32000              # 思考链最大保护字符数（充分保障万亿 MoE 深度推理不被误杀）
     longcat_reasoning_guard_enabled: true # 美团 LongCat 递归思考与元反思震荡守卫 (1:1 专属特化)
-    longcat_plan_churn_threshold: 3       # 计划推倒重拟阈值 (3 次未执行即熔断，节省 60%+ Token)
-    longcat_second_guessing_threshold: 3  # 自我怀疑推翻打断阈值 (3 次即熔断)
+    longcat_plan_churn_threshold: 3       # 计划推倒重拟阈值 (3 次未执行即熔断)
+    longcat_second_guessing_threshold: 3  # 自我怀疑推翻打断阈值
     longcat_constraint_threshold: 5       # 冲突约束偏执咀嚼阈值
-    longcat_min_reasoning_chars: 3500     # 思考链累积最小激活门槛 (低于 3500 字符 100% 豁免防误杀)
-    longcat_memory_search_threshold: 6    # 脑内虚构检索/知识反刍阈值
-    longcat_hesitation_threshold: 5       # 犹疑打断协同阈值 (与记忆检索复合)
-    longcat_standalone_hesitation_threshold: 6 # 独立犹疑单边信号打断阈值 (无需硬绑定特定检索词)
+    longcat_min_reasoning_chars: 6000     # 思考链累积最小激活门槛 (低于 6000 字符 100% 豁免放行)
+    longcat_memory_search_threshold: 8    # 脑内虚构检索/知识反刍阈值
+    longcat_hesitation_threshold: 8       # 犹疑打断协同阈值 (与记忆检索复合)
+    longcat_standalone_hesitation_threshold: 10 # 独立犹疑单边信号打断阈值
 
   # 2. 极度激进模式（极致 Token 节约，秒级掐断死循环）
   ultra_aggressive:

@@ -158,3 +158,11 @@ async def update_config(request: Request, _admin: str = Depends(verify_admin_aut
         "message": "配置已成功保存并立即生效！",
         "active_profile": config.breaker.active_profile,
     }
+
+
+@admin_router.post("/clear-audit")
+async def clear_audit_events(_admin: str = Depends(verify_admin_auth)):
+    from ..metrics import metrics
+
+    metrics.clear_audit_events()
+    return {"status": "success", "message": "审计日志已成功清空！"}

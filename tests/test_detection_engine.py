@@ -1119,6 +1119,95 @@ class TestSelfLoopHeuristicsAntiFalsePositive(unittest.TestCase):
         tripped, reason = scorer.check_text_repetition(exact_loop_text)
         self.assertTrue(tripped, "Exact identical list item loop was not caught!")
 
+    def test_capability_guard_write_file_code_immunity(self):
+        """测试在写文件/编辑代码工具中包含破坏性命令关键字（如 rm -rf, os.remove）绝不被误判为 DESTRUCTIVE"""
+        guard = CapabilityGuard(block_destructive=True)
+        
+        # 1. 模拟向文件写入包含清理逻辑的代码
+        code_args = {
+            "path": "/project/cleaner.py",
+            "content": "import os\ndef clean():\n    os.remove('temp.txt')\n    # execute: rm -rf /tmp/cache\n"
+        }
+        tier, reason = guard.inspect_tool_call("write_file", code_args)
+        self.assertNotEqual(tier, ToolSafetyTier.DESTRUCTIVE, f"write_file was falsely marked DESTRUCTIVE: {reason}")
+        self.assertIsNone(reason)
+
+        # 2. 模拟真实执行破坏性命令终端，必须依然准确拦截
+        cmd_args = {"command": "rm -rf / --no-preserve-root"}
+        tier_exec, reason_exec = guard.inspect_tool_call("run_command", cmd_args)
+        self.assertEqual(tier_exec, ToolSafetyTier.DESTRUCTIVE)
+        self.assertIn("Recursive file deletion", reason_exec)
+
+    def test_tool_loop_guard_sliding_window_immunity(self):
+        """测试正常多步开发中跨窗口执行相同命令不会被全局无休止累加误杀"""
+        guard = CapabilityGuard(block_destructive=True)
+        tool_guard = ToolLoopGuard(
+            guard=guard,
+            cycle_window=4,
+            max_duplicate_calls=3,
+            max_duplicate_skeleton_calls=3
+        )
+
+        # 模拟在开发流程中正常执行命令，中间夹杂其他工作
+        v1, _ = tool_guard.inspect("run_command", {"command": "git status"})
+        self.assertIsNone(v1)
+        tool_guard.inspect("write_file", {"path": "a.py", "content": "print(1)"})
+        v2, _ = tool_guard.inspect("run_command", {"command": "git status"})
+        self.assertIsNone(v2)
+        tool_guard.inspect("read_file", {"path": "a.py"})
+        tool_guard.inspect("read_file", {"path": "b.py"})
+        tool_guard.inspect("read_file", {"path": "c.py"})
+        tool_guard.inspect("read_file", {"path": "d.py"})
+        # 此时滑动窗口已经移出早期的 git status，再次调用不应误判
+        v3, _ = tool_guard.inspect("run_command", {"command": "git status"})
+        self.assertIsNone(v3, "git status was falsely tripped across normal workflow window!")
+
+    def test_metrics_clear_audit_and_client_cancellation(self):
+        """测试指标模块清空流水与客户端断开记录功能"""
+        from longcat_sentinel.metrics import MetricsCollector
+        m = MetricsCollector()
+        m.record_safe_completion("Anthropic", "LongCat-2.5-Preview", tool_tier="READ_ONLY", loop_score="0 / 100")
+        self.assertGreaterEqual(len(m.audit_events), 1)
+
+        m.record_client_cancelled("OpenAI", "LongCat-2.5-Preview", tool_tier="SAFE_PROCESS")
+        # deque 使用 appendleft，最新事件在 index 0
+        self.assertIn("客户端取消", m.audit_events[0]["action"])
+
+        # 测试清空
+        m.clear_audit_events()
+        self.assertEqual(len(m.audit_events), 0)
+
+    def test_progress_tracking_resets_probe_budget(self):
+        """测试路径 A：进展感知机制使得写代码后拥有全新的探索预算，彻底杜绝正常开发误杀"""
+        guard = CapabilityGuard(block_destructive=True)
+        tool_guard = ToolLoopGuard(
+            guard=guard,
+            cycle_window=4,
+            max_duplicate_calls=3,
+            max_duplicate_skeleton_calls=3
+        )
+
+        # 阶段 1：先跑 2 次 git status
+        v1, _ = tool_guard.inspect("run_command", {"command": "git status"})
+        self.assertIsNone(v1)
+        v2, _ = tool_guard.inspect("run_command", {"command": "git status"})
+        self.assertIsNone(v2)
+
+        # 阶段 2：发生实质性进展（写代码/编辑文件）
+        vp, _ = tool_guard.inspect("write_file", {"path": "main.py", "content": "print('hello world')"})
+        self.assertIsNone(vp)
+
+        # 阶段 3：写完代码后，再次运行 git status 检查变更，绝不被误判为死循环
+        v3, _ = tool_guard.inspect("run_command", {"command": "git status"})
+        self.assertIsNone(v3, "git status was falsely tripped after code writing progress!")
+        v4, _ = tool_guard.inspect("run_command", {"command": "git status"})
+        self.assertIsNone(v4, "Second git status after progress was falsely tripped!")
+
+        # 阶段 4：如果在此之后彻底无进展，连续空转触发第 3 次无进展调用，依然能精准掐断
+        v5, r5 = tool_guard.inspect("run_command", {"command": "git status"})
+        self.assertEqual(v5, "tool_loop", "True consecutive no-progress loop was not tripped!")
+        self.assertIn("Repeated", r5)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -147,10 +147,20 @@ class CapabilityGuard:
         walk(arguments)
         return " ".join(parts)
 
-    def scan_arguments(self, arguments: Any) -> Optional[str]:
+    def scan_arguments(self, arguments: Any, tool_name: Optional[str] = None) -> Optional[str]:
         """Returns the description of the first destructive pattern hit, else None."""
         if not self.block_destructive:
             return None
+
+        # 若提供了具体工具名，则根据工具能力进行作用域约束，杜绝写文件、读文件、搜索代码被误杀
+        if tool_name:
+            capabilities = self.infer_capabilities(tool_name)
+            norm = _normalize_tool_name(tool_name)
+            if any(r in norm for r in ("read", "view", "search", "grep", "list", "glob", "open", "cat")):
+                return None
+            if "filesystem_write" in capabilities and "process_execute" not in capabilities and "database_modify" not in capabilities:
+                return None
+
         arg_str = self.flatten_arguments(arguments)
         if not arg_str:
             return None
@@ -168,7 +178,7 @@ class CapabilityGuard:
         """
         capabilities = self.infer_capabilities(tool_name)
 
-        hit = self.scan_arguments(arguments)
+        hit = self.scan_arguments(arguments, tool_name=tool_name)
         if hit:
             return ToolSafetyTier.DESTRUCTIVE, f"Triggered destructive pattern: {hit}"
 

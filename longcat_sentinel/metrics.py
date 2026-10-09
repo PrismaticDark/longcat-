@@ -99,7 +99,13 @@ class MetricsCollector:
             except Exception:
                 pass
 
-    def record_safe_completion(self, protocol: str, model: str) -> None:
+    def record_safe_completion(
+        self,
+        protocol: str,
+        model: str,
+        tool_tier: str = "READ_ONLY",
+        loop_score: str = "0 / 100 (安全)",
+    ) -> None:
         """记录正常完成的安全审计日志"""
         with self._stats_lock:
             self.audit_events.appendleft(
@@ -107,12 +113,37 @@ class MetricsCollector:
                     "time": time.strftime("%H:%M:%S"),
                     "protocol": protocol,
                     "model": model,
-                    "tool_tier": "READ_ONLY",
-                    "loop_score": "0 / 100 (安全)",
+                    "tool_tier": tool_tier,
+                    "loop_score": loop_score,
                     "action": "安全放行",
                     "is_safe": True,
                 }
             )
+
+    def record_client_cancelled(
+        self,
+        protocol: str,
+        model: str,
+        tool_tier: str = "READ_ONLY",
+    ) -> None:
+        """记录客户端主动取消/断开连接事件"""
+        with self._stats_lock:
+            self.audit_events.appendleft(
+                {
+                    "time": time.strftime("%H:%M:%S"),
+                    "protocol": protocol,
+                    "model": model,
+                    "tool_tier": tool_tier,
+                    "loop_score": "-",
+                    "action": "⏹️ 客户端取消连接",
+                    "is_safe": True,
+                }
+            )
+
+    def clear_audit_events(self) -> None:
+        """清空审计记录队列（供前端大屏清屏与重置使用）"""
+        with self._stats_lock:
+            self.audit_events.clear()
 
     def record_upstream_error(self, protocol: str, model: str, detail: str = "") -> None:
         """Records a failed upstream exchange, which is neither safe nor a circuit trip."""

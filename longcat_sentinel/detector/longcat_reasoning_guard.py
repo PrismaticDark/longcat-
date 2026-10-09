@@ -384,11 +384,7 @@ class LongCatReasoningGuard:
             return False
         tail = text[-1000:] if len(text) > 1000 else text
 
-        # 极限停滞防线: 纯单边犹疑已经达到绝对高危阈值时，不予任何豁免
-        if self.hesitation_count >= self.standalone_hesitation_threshold:
-            return False
-
-        # 1. 结构化待办清单 (- item, 1. item, >=2 条)
+        # 1. 结构化待办清单 (- item, 1. item, >=2 条) 具有最高置信度，只要末尾未被推翻立即豁免
         items = _CHECKLIST_ITEM_RE.findall(tail)
         if len(items) >= 2:
             last_item_pos = max(tail.rfind(it) for it in items)
@@ -396,12 +392,16 @@ class LongCatReasoningGuard:
             if not any(pat.search(subsequent) for pat in _ABANDONMENT_PATTERNS):
                 return True
 
+        # 极限停滞防线: 纯单边犹疑已经达到绝对高危阈值时，纯口头宣告不予豁免
+        if self.hesitation_count >= self.standalone_hesitation_threshold:
+            return False
+
         # 2. 明确的命令/工具执行宣告 (如 "I'll use pwsh to check", "Let me run some commands", "开始执行命令")
         # 严格约束：若已发生多次自我推翻或认知纠结自旋，纯口头宣告不再豁免
         if (
             self.hesitation_count >= self.hesitation_threshold
             or self.memory_search_count >= self.memory_search_threshold
-            or len(self.abandon_positions) >= 2
+            or len(self.abandon_positions) >= self.second_guessing_threshold
         ):
             return False
 
@@ -482,7 +482,7 @@ class LongCatReasoningGuard:
         # 真正死锁判定:
         latest_plan_gap = plan_positions[-1] - plan_positions[-2]
         min_gap = min(800, max(50, self.min_reasoning_chars // 3))
-        if latest_plan_gap >= min_gap and len(abandon_positions) >= 2:
+        if len(plan_positions) >= self.plan_churn_threshold and latest_plan_gap >= min_gap and len(abandon_positions) >= 2:
             sample_plan = plan_samples[-1] if plan_samples else ""
             return True, (
                 f"LongCat-2.5 递归计划推翻震荡 (Plan Churn & Abandonment: "

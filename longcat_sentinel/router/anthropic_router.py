@@ -199,6 +199,7 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
         stream_finished_normally = False
         trip_reason: Optional[str] = None
         trip_tier = "READ_ONLY"
+        highest_tool_tier = "READ_ONLY"
 
         try:
             async for line in _iter_lines_with_deadlines(
@@ -267,17 +268,21 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
                             active_blocks.add(block_index)
                             block_types[block_index] = block_type
                             if block_type == "tool_use":
-                                tracker.start_tool(
+                                instance = tracker.start_tool(
                                     block_index,
                                     str(block.get("id", "")),
                                     str(block.get("name", "")),
                                 )
+                                if instance and instance.safety_tier.value != "READ_ONLY":
+                                    highest_tool_tier = instance.safety_tier.value
 
                         elif evt_type == "content_block_stop":
                             block_index = int(evt.get("index", 0))
                             if block_types.get(block_index) == "tool_use":
                                 instance = tracker.finish_tool(block_index)
                                 if instance is not None:
+                                    if instance.safety_tier.value != "READ_ONLY":
+                                        highest_tool_tier = instance.safety_tier.value
                                     violation, reason = tool_guard.inspect(
                                         instance.name, instance.arguments_buffer
                                     )
@@ -368,6 +373,11 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
             else:
                 stream_finished_normally = True
 
+        except asyncio.CancelledError:
+            metrics.record_client_cancelled(
+                TEXT_BLOCK_LABEL, normalized_model, tool_tier=highest_tool_tier
+            )
+            raise
         except TimeoutError as exc:
             metrics.record_upstream_error(TEXT_BLOCK_LABEL, normalized_model, str(exc))
         except httpx.HTTPError as exc:
@@ -376,7 +386,13 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
             )
         finally:
             if stream_finished_normally and not tripped:
-                metrics.record_safe_completion(TEXT_BLOCK_LABEL, normalized_model)
+                score_desc = f"{scorer.current_score} / 100 (安全)"
+                metrics.record_safe_completion(
+                    TEXT_BLOCK_LABEL,
+                    normalized_model,
+                    tool_tier=highest_tool_tier,
+                    loop_score=score_desc,
+                )
             metrics.release_stream()
             await upstream_resp.aclose()
             await client.aclose()

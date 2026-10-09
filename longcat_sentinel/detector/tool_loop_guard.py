@@ -112,7 +112,7 @@ class ToolLoopGuard:
         ttl_seconds: float = DEFAULT_TTL_SECONDS,
         freeze_on_destructive: bool = True,
         tool_skeleton_enabled: bool = True,
-        max_duplicate_skeleton_calls: int = 2,
+        max_duplicate_skeleton_calls: int = 3,
     ):
         self.guard = guard
         self.loop_enabled = bool(loop_enabled)
@@ -160,17 +160,29 @@ class ToolLoopGuard:
             self._skeleton_ledger.clear()
 
     # -- inspection -----------------------------------------------------------
-    def inspect(self, tool_name: str, arguments: Any) -> Tuple[Optional[str], Optional[str]]:
+    def is_progress_action(self, tool_name: str, arguments: Any) -> bool:
+        """Identify whether a tool call represents substantial progress (e.g. file writing, code editing)."""
+        norm = str(tool_name).lower()
+        if any(k in norm for k in ("write", "edit", "replace", "patch", "create", "save", "append", "modify")):
+            return True
+        capabilities = self.guard.infer_capabilities(tool_name)
+        if "filesystem_write" in capabilities or "database_modify" in capabilities:
+            return True
+        return False
+
+    def inspect(
+        self, tool_name: str, arguments: Any
+    ) -> Tuple[Optional[str], Optional[str]]:
         """
         Evaluates a single tool call and records it in the ledger. Call exactly once
         per completed tool call.
         """
         # 1. Argument-level destructive scan (highest priority, never gated by loop settings)
-        hit = self.guard.scan_arguments(arguments)
-        if hit:
+        tier, reason = self.guard.inspect_tool_call(tool_name, arguments)
+        if tier == ToolSafetyTier.DESTRUCTIVE and reason:
             if self.freeze_on_destructive:
                 self._record(tool_name, arguments)
-                return "destructive", hit
+                return "destructive", reason
             # Audited but not blocked: still record so repetition can be tracked.
             self._record(tool_name, arguments)
             return None, None
@@ -184,6 +196,7 @@ class ToolLoopGuard:
         raw_cmd = extract_command(arguments) or canonical_arguments(arguments)
         cmd_sample = (raw_cmd[:60] + "...") if len(raw_cmd) > 60 else raw_cmd
         now = time.time()
+        is_progress = self.is_progress_action(tool_name, arguments)
 
         with self._lock:
             self._prune(now, self.ttl_seconds)
@@ -197,8 +210,10 @@ class ToolLoopGuard:
                         self._skeleton_ledger.append((now, skeleton_sig, cmd_sample))
                     return "tool_cycle", cycle
 
-                # 3. Same tool + identical arguments repeated too many times (exact)
-                repeats = sum(1 for _, sig in self._ledger if sig == signature) + 1
+                # 3. Same tool + identical arguments repeated in recent window (exact)
+                recent_window = max(self.cycle_window, self.max_duplicate_calls * 2)
+                recent_sigs = [sig for _, sig in list(self._ledger)[-recent_window:]]
+                repeats = sum(1 for sig in recent_sigs if sig == signature) + 1
                 self._ledger.append((now, signature))
                 if repeats >= self.max_duplicate_calls:
                     if self.tool_skeleton_enabled:
@@ -209,16 +224,18 @@ class ToolLoopGuard:
                     )
 
                 # 4. 语义命令骨架循环与重复检测 (微调搜索后缀、管道和重定向绕过识别)
-                if self.tool_skeleton_enabled:
+                if self.tool_skeleton_enabled and skeleton_sig:
                     # 4a. 语义骨架周期性循环 (如 A->B->A->B)
                     sk_cycle = self._detect_skeleton_cycle(skeleton_sig)
                     if sk_cycle is not None:
                         self._skeleton_ledger.append((now, skeleton_sig, cmd_sample))
                         return "tool_cycle", sk_cycle
 
-                    # 4b. 语义骨架高频重复 (同义探测反复空转)
+                    # 4b. 语义骨架在滑动窗口内的高频重复 (同义探测反复空转)
+                    recent_sk_window = max(self.cycle_window, self.max_duplicate_skeleton_calls * 2)
+                    recent_sks = [sig for _, sig, _ in list(self._skeleton_ledger)[-recent_sk_window:]]
                     sk_repeats = (
-                        sum(1 for _, sig, _ in self._skeleton_ledger if sig == skeleton_sig)
+                        sum(1 for sig in recent_sks if sig == skeleton_sig)
                         + 1
                     )
                     self._skeleton_ledger.append((now, skeleton_sig, cmd_sample))
@@ -227,7 +244,15 @@ class ToolLoopGuard:
                             f"Repeated semantic tool call: '{tool_name}' invoked "
                             f"{sk_repeats}x with near-identical command intent: '{cmd_sample}'"
                         )
-                    return None, None
+                else:
+                    self._skeleton_ledger.append((now, f"tool:{tool_name}", ""))
+
+                # 5. 进展感知驱动的探测历史衰减 (Progress Tracking):
+                # 若本次操作代表了实质性的文件/代码写入进展，且未触发死循环，
+                # 则自动清空先前积累的只读与状态探测历史，让后续验证操作（如 git status, pytest, read_file）获得全新的探索预算
+                if is_progress:
+                    self._ledger = deque([(now, signature)], maxlen=MAX_LEDGER_ENTRIES)
+                    self._skeleton_ledger = deque([(now, f"tool:{tool_name}", "")], maxlen=MAX_LEDGER_ENTRIES)
 
                 return None, None
 

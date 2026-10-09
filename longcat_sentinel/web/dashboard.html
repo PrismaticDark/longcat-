@@ -1031,6 +1031,16 @@
                             </div>
                             <p>适合日常闲聊、百科问答等通用场景，适度放宽拦截阈值，保障长文叙述的连贯性。</p>
                         </div>
+
+                        <div class="profile-card" id="card-ultra_aggressive" onclick="selectProfile('ultra_aggressive')">
+                            <div class="profile-card-header">
+                                <h3>
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                                    极度激进模式
+                                </h3>
+                            </div>
+                            <p>极致 Token 节约，秒级掐断死循环。阈值设为绝对严苛，适合探索性短任务。</p>
+                        </div>
                     </div>
                 </div>
 
@@ -1375,6 +1385,10 @@ for chunk in resp:
         function copyGatewayToken() {
             const input = document.getElementById('input-gateway-token');
             const tokenToCopy = (input && input.value) ? input.value : currentGatewayToken;
+            if (tokenToCopy === '[REDACTED]') {
+                showToast('授权码为安全脱敏状态，请查阅本地 .env 中的 SENTINEL_GATEWAY_TOKEN');
+                return;
+            }
             if (tokenToCopy) {
                 navigator.clipboard.writeText(tokenToCopy).then(() => {
                     showToast('客户端授权码已成功复制到剪贴板！');
@@ -1408,7 +1422,7 @@ for chunk in resp:
 
         // 动态将真实 Token 替换至指南中的所有代码段
         function updateGuideSnippets(token) {
-            if (!token) return;
+            if (!token || token === '[REDACTED]') return;
             const currentHost = window.location.host || '127.0.0.1:8080';
             const protocol = window.location.protocol || 'http:';
             const baseUrl = `${protocol}//${currentHost}`;
@@ -1573,9 +1587,18 @@ for chunk in resp:
             }
         }
 
-        function clearAuditDisplay() {
+        async function clearAuditDisplay() {
+            try {
+                await fetch('/api/admin/clear-audit', {
+                    method: 'POST',
+                    headers: adminHeaders()
+                });
+            } catch (e) {
+                console.warn('清空后端审计流水失败:', e);
+            }
             const tbody = document.getElementById('audit-table-body');
             tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--slate-400); padding: 24px;">审计记录已清屏，等待新事件流入...</td></tr>';
+            showToast('实时审计流水已清空');
         }
 
         // 连通性诊断
@@ -1641,8 +1664,8 @@ for chunk in resp:
                     document.getElementById('stat-tripped').innerText = data.tripped_circuits ?? 0;
                     document.getElementById('stat-saved').innerText = (data.saved_tokens_estimate ?? 0).toLocaleString();
 
+                    const tbody = document.getElementById('audit-table-body');
                     if (data.audit_events && data.audit_events.length > 0) {
-                        const tbody = document.getElementById('audit-table-body');
                         tbody.innerHTML = data.audit_events.map(ev => `
                             <tr>
                                 <td>${escapeHtml(ev.time)}</td>
@@ -1653,6 +1676,8 @@ for chunk in resp:
                                 <td style="font-weight: 600; color: ${ev.is_safe ? 'var(--success)' : 'var(--danger)'};">${escapeHtml(ev.action)}</td>
                             </tr>
                         `).join('');
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--slate-400); padding: 24px;">暂无拦截与会话记录，等待事件流入...</td></tr>';
                     }
                 }
             } catch (e) { }
