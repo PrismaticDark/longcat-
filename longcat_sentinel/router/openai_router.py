@@ -143,6 +143,97 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
             await client.aclose()
 
         if resp.status_code < 400:
+            # 经手 Token 计量
+            try:
+                r_parsed = resp.json()
+                usage_info = r_parsed.get("usage", {})
+                toks = int(usage_info.get("prompt_tokens", 0)) + int(usage_info.get("completion_tokens", 0))
+                if toks > 0:
+                    metrics.record_tokens_processed(toks)
+                else:
+                    metrics.record_tokens_processed(max(1, len(resp.content) // 4))
+            except Exception:
+                metrics.record_tokens_processed(max(1, len(resp.content) // 4))
+
+            # 全局旁路透明转发模式：直接原样放行，跳过所有检测
+            if getattr(config, "bypass_mode", False):
+                metrics.record_safe_completion(NONSTREAM_BLOCK_LABEL, normalized_model, "READ_ONLY", "旁路直通放行")
+                return Response(
+                    content=resp.content,
+                    status_code=resp.status_code,
+                    media_type=resp.headers.get("content-type", "application/json"),
+                )
+
+            # 针对非流式响应执行循环与工具调用熔断检查
+            try:
+                resp_json = resp.json()
+                tripped_nonstream = False
+                trip_reason_nonstream = ""
+                trip_tier_nonstream = "READ_ONLY"
+
+                scorer = build_scorer(profile, config.immunity)
+                tool_guard = build_tool_guard(config, profile)
+
+                choices = resp_json.get("choices") or []
+                if choices:
+                    msg = choices[0].get("message") or {}
+                    content_val = str(msg.get("content") or "")
+                    reasoning_val = str(msg.get("reasoning_content") or "")
+
+                    for text_chunk in (reasoning_val, content_val):
+                        if text_chunk:
+                            is_loop, r_reason = scorer.feed(text_chunk)
+                            if not is_loop:
+                                is_loop, r_reason = scorer.flush()
+                            if is_loop:
+                                tripped_nonstream = True
+                                trip_reason_nonstream = r_reason or "Text loop detected"
+                                break
+
+                    tool_calls = msg.get("tool_calls") or []
+                    for tc in tool_calls:
+                        func = tc.get("function") or {}
+                        t_name = str(func.get("name") or "")
+                        t_args = func.get("arguments") or "{}"
+                        violation, t_reason = tool_guard.inspect(t_name, t_args)
+                        if violation:
+                            tripped_nonstream = True
+                            trip_reason_nonstream = t_reason or violation
+                            tier, _ = tool_guard.guard.inspect_tool_call(t_name, t_args)
+                            trip_tier_nonstream = tier.value
+                            break
+
+                if tripped_nonstream:
+                    metrics.record_circuit_trip(
+                        protocol=NONSTREAM_BLOCK_LABEL,
+                        model=normalized_model,
+                        reason=trip_reason_nonstream,
+                        saved_tokens=ESTIMATED_SAVED_TOKENS,
+                        tool_tier=trip_tier_nonstream,
+                    )
+                    inj_text = CompliantInjector.build_openai_interruption_content(
+                        trip_reason_nonstream, config.breaker.injection_template
+                    )
+                    resp_json["choices"] = [
+                        {
+                            "index": 0,
+                            "message": {
+                                "role": "assistant",
+                                "content": inj_text,
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ]
+                    metrics.release_stream()
+                    await client.aclose()
+                    return Response(
+                        content=json.dumps(resp_json).encode("utf-8"),
+                        status_code=200,
+                        media_type="application/json",
+                    )
+            except Exception:
+                pass
+
             metrics.record_safe_completion(NONSTREAM_BLOCK_LABEL, normalized_model)
         else:
             metrics.record_upstream_error(
@@ -182,6 +273,27 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
         )
 
     async def sse_generator() -> AsyncGenerator[bytes, None]:
+        if getattr(config, "bypass_mode", False):
+            # 全局旁路透明转发：零检测、零判断、纯透传流
+            try:
+                async for line in _iter_lines_with_deadlines(
+                    upstream_resp,
+                    config.timeouts.time_to_first_token_seconds,
+                    config.timeouts.stream_idle_seconds,
+                ):
+                    if not line:
+                        yield b"\n"
+                        continue
+                    if len(line) > 6:
+                        metrics.record_tokens_processed(max(1, len(line) // 4))
+                    yield line.encode("utf-8") + b"\n\n"
+                metrics.record_safe_completion(STREAM_BLOCK_LABEL, normalized_model, "READ_ONLY", "旁路直通放行")
+            finally:
+                metrics.release_stream()
+                await upstream_resp.aclose()
+                await client.aclose()
+            return
+
         ring = RingBuffer(capacity_bytes=config.limits.ring_buffer_bytes)
         scorer = build_scorer(profile, config.immunity)
         tool_guard = build_tool_guard(config, profile)
@@ -196,6 +308,28 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
         trip_reason: Optional[str] = None
         trip_tier = "READ_ONLY"
         highest_tool_tier = "READ_ONLY"
+
+        # 连续违规容忍度判定（主人配置：连续 N 次检测到违规才熔断）
+        consecutive_required = max(1, int(config.breaker.consecutive_violations_to_trip))
+        violation_streak = 0
+        last_detected_reason: Optional[str] = None
+
+        def record_violation(reason: str, tier: str = "READ_ONLY", is_destructive: bool = False) -> bool:
+            nonlocal violation_streak, last_detected_reason, tripped, trip_reason, trip_tier
+            if is_destructive:
+                tripped = True
+                trip_reason = reason
+                trip_tier = tier
+                return True
+
+            violation_streak += 1
+            last_detected_reason = reason
+            if violation_streak >= consecutive_required:
+                tripped = True
+                trip_reason = reason
+                trip_tier = tier
+                return True
+            return False
 
         def fallback_finish_chunk() -> bytes:
             payload = {
@@ -240,14 +374,12 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                         if not tripped:
                             is_loop, reason = scorer.flush()
                             if is_loop:
-                                tripped = True
-                                trip_reason = reason
-                                trip_tier = "READ_ONLY"
+                                record_violation(reason or "Loop detected on completion", tier="READ_ONLY")
 
                         violation = finalize_tool_calls()
                         if violation:
-                            tripped = True
-                            trip_reason, trip_tier = violation
+                            is_destruct = (violation[1] == "DESTRUCTIVE")
+                            record_violation(violation[0], tier=violation[1], is_destructive=is_destruct)
                         if not has_emitted_finish and not tripped:
                             yield fallback_finish_chunk()
                             has_emitted_finish = True
@@ -288,8 +420,8 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                                 has_emitted_finish = True
                                 violation = finalize_tool_calls()
                                 if violation:
-                                    tripped = True
-                                    trip_reason, trip_tier = violation
+                                    is_destruct = (violation[1] == "DESTRUCTIVE")
+                                    record_violation(violation[0], tier=violation[1], is_destructive=is_destruct)
 
                             delta = choice0.get("delta") or {}
 
@@ -327,9 +459,7 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                                     ring.write(content)
                                     is_loop, reason = scorer.feed(content)
                                     if is_loop:
-                                        tripped = True
-                                        trip_reason = reason
-                                        trip_tier = "READ_ONLY"
+                                        record_violation(reason or "Text loop detected", tier="READ_ONLY")
 
                                 if (
                                     reasoning
@@ -339,19 +469,16 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                                     ring.write(reasoning)
                                     is_loop, reason = scorer.feed(reasoning)
                                     if is_loop:
-                                        tripped = True
-                                        trip_reason = reason
-                                        trip_tier = "READ_ONLY"
+                                        record_violation(reason or "Thinking loop detected", tier="READ_ONLY")
                                     elif think_chars > hard_think_cap:
                                         # 极端超长兜底保护：仅当超过极端安全硬上限且未处于行动就绪状态时才截断
                                         tail_ready = scorer.longcat_guard.is_action_ready(scorer.longcat_guard._tail_window)
                                         if not tail_ready:
-                                            tripped = True
-                                            trip_reason = (
-                                                f"思考链达到极端安全上限保护 ({think_chars} > "
-                                                f"{hard_think_cap} chars)"
+                                            record_violation(
+                                                f"思考链达到极端安全上限保护 ({think_chars} > {hard_think_cap} chars)",
+                                                tier="READ_ONLY",
+                                                is_destructive=True,
                                             )
-                                            trip_tier = "READ_ONLY"
 
                         if tripped:
                             saved_toks = max(1024, 8192 - ring.total_tokens_seen)

@@ -157,12 +157,7 @@ if __name__ == "__main__":
         print_banner(host, port, scheme)
 
         display_host = "127.0.0.1" if host in ("0.0.0.0", "::") else host
-        # 启动 1 秒后自动弹出默认浏览器展示监控大屏
-        threading.Thread(
-            target=open_browser_tab,
-            args=(f"{scheme}://{display_host}:{port}/dashboard",),
-            daemon=True,
-        ).start()
+        dashboard_url = f"{scheme}://{display_host}:{port}/dashboard"
 
         ssl_kwargs = {}
         if server_cfg.tls_enabled:
@@ -171,14 +166,70 @@ if __name__ == "__main__":
             if server_cfg.tls_key_path:
                 ssl_kwargs["ssl_keyfile"] = server_cfg.tls_key_path
 
-        uvicorn.run(
-            app,
+        # 启动 Uvicorn 服务（在后台独立工作线程）
+        uvicorn_config = uvicorn.Config(
+            app=app,
             host=host,
             port=port,
-            workers=server_cfg.workers or 1,
             log_level="info",
             **ssl_kwargs,
         )
+        server_instance = uvicorn.Server(uvicorn_config)
+
+        def run_uvicorn():
+            try:
+                server_instance.run()
+            except Exception as ex:
+                print(f"[Uvicorn Error] {ex}")
+
+        server_thread = threading.Thread(target=run_uvicorn, daemon=True)
+        server_thread.start()
+
+        # 等待本地网关端口就绪 (最多等待 5 秒)
+        import urllib.request
+        for _ in range(50):
+            try:
+                with urllib.request.urlopen(f"{scheme}://{display_host}:{port}/health", timeout=0.2) as resp:
+                    if resp.status == 200:
+                        break
+            except Exception:
+                time.sleep(0.1)
+
+        # 弹出原生桌面窗口 (pywebview 独立视窗模式，不依赖浏览器标签页)
+        if "--no-gui" in sys.argv:
+            # 纯后台服务守护模式（由外层独立原生宿主控制视窗）
+            while not server_instance.should_exit:
+                time.sleep(0.5)
+        else:
+            launched_window = False
+            try:
+                import pywebview
+
+                def on_window_closed():
+                    server_instance.should_exit = True
+
+                icon_candidate = exe_dir / "app_icon.ico"
+                icon_path = str(icon_candidate.resolve()) if icon_candidate.exists() else None
+
+                window = pywebview.create_window(
+                    title="🛡️ LongCat Sentinel 龙猫熔断哨兵",
+                    url=dashboard_url,
+                    width=1280,
+                    height=840,
+                    min_size=(960, 600),
+                    confirm_close=False,
+                )
+                window.events.closed += on_window_closed
+                launched_window = True
+                # pywebview.start 阻塞主线程，直到用户关闭窗口
+                pywebview.start(gui="edgechromium", icon=icon_path)
+            except Exception as gui_err:
+                print(f" [提示] 原生窗口初始化跳过 ({gui_err})，自动回退到默认浏览器模式。")
+                if not launched_window:
+                    open_browser_tab(dashboard_url)
+                    # 阻塞直到后台服务结束
+                    while not server_instance.should_exit:
+                        time.sleep(0.5)
     except Exception as e:
         print("\n" + "=" * 70)
         print(f" [致命异常] 网关启动失败: {e}")

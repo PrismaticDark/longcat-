@@ -30,6 +30,7 @@ class MetricsCollector:
                 cls._instance.active_streams = 0
                 cls._instance.tripped_circuits = 0
                 cls._instance.saved_tokens_estimate = 0
+                cls._instance.total_tokens_processed = 0
                 cls._instance.audit_events = deque(maxlen=50)
                 cls._instance._stats_lock = threading.Lock()
         return cls._instance
@@ -161,6 +162,12 @@ class MetricsCollector:
                 }
             )
 
+    def record_tokens_processed(self, count: int) -> None:
+        """累计经手处理的 Token 总数"""
+        if count and count > 0:
+            with self._stats_lock:
+                self.total_tokens_processed += int(count)
+
     # -- snapshot -------------------------------------------------------------
     def get_stats(self) -> Dict[str, Any]:
         """获取当前指标快照"""
@@ -170,6 +177,7 @@ class MetricsCollector:
                 "active_streams": self.active_streams,
                 "tripped_circuits": self.tripped_circuits,
                 "saved_tokens_estimate": self.saved_tokens_estimate,
+                "total_tokens_processed": self.total_tokens_processed,
                 "audit_events": list(self.audit_events),
             }
 
@@ -180,6 +188,7 @@ class MetricsCollector:
             self.active_streams = 0
             self.tripped_circuits = 0
             self.saved_tokens_estimate = 0
+            self.total_tokens_processed = 0
             self.audit_events.clear()
 
 

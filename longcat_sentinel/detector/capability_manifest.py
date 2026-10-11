@@ -59,9 +59,12 @@ DANGEROUS_PATTERNS: List[Tuple[re.Pattern, str]] = [
     # 4. 数据库毁灭性 DDL/DML
     (re.compile(r"\b(?:drop\s+(?:database|table|schema)|truncate\s+table|delete\s+from\s+\w+\s*(?:;|$|\s+where\s+1\s*=\s*1))\b", re.IGNORECASE), "Destructive SQL operation"),
 
-    # 5. 危险管道远程执行
+    # 5. 危险管道远程执行与混淆逃逸
     (re.compile(r"\b(?:curl|wget)\b.*\|\s*(?:sudo\s+)?(?:bash|sh|python|zsh|powershell)\b", re.IGNORECASE), "Remote script pipe to shell"),
     (re.compile(r"\b(?:Invoke-Expression|iex)\b[^\n]*\|", re.IGNORECASE), "PowerShell remote pipe execution"),
+    (re.compile(r"\b(?:echo|printf)\s+[^\n|]+\|\s*(?:base64\s+-(?:d|-decode)|openssl\s+base64\s+-d)\s*\|\s*(?:sh|bash|zsh|powershell|pwsh)", re.IGNORECASE), "Base64 decoded command execution pipe"),
+    (re.compile(r"\b(?:python\d*|node)\s+-c\s+.*(?:exec\s*\(\s*bytes\.fromhex|eval\s*\(\s*Buffer\.from)\b", re.IGNORECASE), "Obfuscated hex/base64 inline script execution"),
+    (re.compile(r"\[System\.Convert\]::FromBase64String\b[^\n]*\|\s*(?:iex|Invoke-Expression)", re.IGNORECASE), "PowerShell base64 memory invocation"),
 ]
 
 # 工具名 -> 能力元推断规则。
@@ -164,8 +167,31 @@ class CapabilityGuard:
         arg_str = self.flatten_arguments(arguments)
         if not arg_str:
             return None
+
+        # 安全相对路径放行检查 (Safe Relative Path Exemption):
+        # 允许 Agent 清理常见的项目构建临时目录（例如 rm -rf ./dist、build、tmp、.next 等），
+        # 前提是：绝对不能包含根路径 '/'、盘符 'c:'、'~'、'$HOME' 或越界父目录 '..'
+        SAFE_DIR_NAMES = ("dist", "build", "tmp", "temp", "node_modules", ".next", ".turbo", "__pycache__", ".pytest_cache", "target")
+        is_safe_clean = False
+        lower_arg = arg_str.lower().strip()
+        # 匹配 rm -rf 或 Remove-Item 清理相对目录
+        clean_match = re.search(r"\b(?:rm\s+-[a-zA-Z]*[rf][a-zA-Z]*|Remove-Item\b[^\n]*-(?:Recurse|Force))\s+([^\s;&|]+)", lower_arg)
+        if clean_match:
+            target_path = clean_match.group(1).strip("'\"")
+            # 严格确保目标路径不包含越界危险符号
+            if not any(bad in target_path for bad in ("/", "\\", "~", "..", "$", "*", ":")):
+                if any(target_path == d or target_path.startswith(f"./{d}") or target_path.startswith(f".\\{d}") for d in SAFE_DIR_NAMES):
+                    is_safe_clean = True
+            elif target_path.startswith(("./", ".\\")):
+                sub = target_path[2:].strip("/\\")
+                if ".." not in sub and ":" not in sub and not sub.startswith(("/", "\\")):
+                    if any(sub == d or sub.startswith(f"{d}/") or sub.startswith(f"{d}\\") for d in SAFE_DIR_NAMES):
+                        is_safe_clean = True
+
         for pattern, description in DANGEROUS_PATTERNS:
             if pattern.search(arg_str):
+                if is_safe_clean and "Recursive file deletion" in description:
+                    continue  # 豁免安全相对路径构建清理
                 return description
         return None
 

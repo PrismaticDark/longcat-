@@ -50,6 +50,7 @@ security:
 breaker:
   active_profile: "code_agent"
   streaming_action: "protocol_compliant_inject"
+  consecutive_violations_to_trip: 2     # 连续检测到 2 次违规才触发熔断（可设为 1 即刻拦截，或 2~3 降低误杀率）
   injection_template: >-
     
 
@@ -92,6 +93,9 @@ profiles:
     longcat_memory_search_threshold: 8    # 脑内虚构检索/知识反刍阈值
     longcat_hesitation_threshold: 8       # 犹疑打断协同阈值 (与记忆检索复合)
     longcat_standalone_hesitation_threshold: 10 # 独立犹疑单边信号打断阈值
+    semantic_guard_enabled: true        # 开启语义停滞与信息熵衰减检测
+    semantic_similarity_threshold: 0.82 # 语义重合度阈值 (0.50 ~ 1.00)
+    semantic_min_segment_chars: 60      # 语义分段最小有效字符数
 
   # 2. 极度激进模式（极致 Token 节约，秒级掐断死循环）
   ultra_aggressive:
@@ -119,6 +123,9 @@ profiles:
     longcat_second_guessing_threshold: 2
     longcat_constraint_threshold: 4
     longcat_min_reasoning_chars: 3000
+    semantic_guard_enabled: true
+    semantic_similarity_threshold: 0.78
+    semantic_min_segment_chars: 50
 
   # 3. 严格抗循环模式
   strict:
@@ -146,6 +153,9 @@ profiles:
     longcat_second_guessing_threshold: 3
     longcat_constraint_threshold: 5
     longcat_min_reasoning_chars: 3500
+    semantic_guard_enabled: true
+    semantic_similarity_threshold: 0.80
+    semantic_min_segment_chars: 50
 
   # 4. 平衡模式
   balanced:
@@ -173,6 +183,9 @@ profiles:
     longcat_second_guessing_threshold: 4
     longcat_constraint_threshold: 6
     longcat_min_reasoning_chars: 4000
+    semantic_guard_enabled: true
+    semantic_similarity_threshold: 0.85
+    semantic_min_segment_chars: 60
 
 immunity:
   ignore_whitespaces: true

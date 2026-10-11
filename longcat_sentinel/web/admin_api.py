@@ -68,6 +68,7 @@ async def get_stats(request: Request, _admin: str = Depends(verify_admin_auth)):
         "active_streams": snapshot["active_streams"],
         "tripped_circuits": snapshot["tripped_circuits"],
         "saved_tokens_estimate": snapshot["saved_tokens_estimate"],
+        "total_tokens_processed": snapshot.get("total_tokens_processed", 0),
         "upstream_model": request.app.state.config.upstream.default_model,
         "audit_events": snapshot["audit_events"],
     }
@@ -85,7 +86,7 @@ async def get_config(request: Request, _admin: str = Depends(verify_admin_auth))
     else:
         masked_key = ""
 
-    gateway_tok = config.auth.gateway_tokens[0] if config.auth.gateway_tokens else os.getenv("SENTINEL_GATEWAY_TOKEN", "")
+    active_p = config.profiles.get(config.breaker.active_profile)
 
     return {
         "api_key_configured": bool(raw_key),
@@ -96,8 +97,13 @@ async def get_config(request: Request, _admin: str = Depends(verify_admin_auth))
         "default_model": config.upstream.default_model,
         "active_profile": config.breaker.active_profile,
         "available_profiles": sorted(config.profiles.keys()),
+        "bypass_mode": getattr(config, "bypass_mode", False),
+        "tool_guard_enabled": getattr(active_p, "tool_loop_enabled", True) if active_p else True,
+        "text_guard_enabled": getattr(active_p, "think_loop_enabled", True) if active_p else True,
+        "semantic_guard_enabled": getattr(active_p, "semantic_guard_enabled", True) if active_p else True,
         "block_destructive": config.tool_guard.block_destructive_patterns,
         "action_on_destructive": config.tool_guard.action_on_destructive,
+        "consecutive_violations_to_trip": config.breaker.consecutive_violations_to_trip,
         "injection_template": config.breaker.injection_template,
         "max_request_body_bytes": config.limits.max_request_body_bytes,
         "max_active_streams": config.limits.max_active_streams,
@@ -118,7 +124,24 @@ async def update_config(request: Request, _admin: str = Depends(verify_admin_aut
     new_api_key = body.get("api_key")
     new_profile = body.get("active_profile")
     block_destructive = body.get("block_destructive")
+    consecutive_violations = body.get("consecutive_violations_to_trip")
     injection_template = body.get("injection_template")
+    bypass_mode = body.get("bypass_mode")
+    tool_guard_enabled = body.get("tool_guard_enabled")
+    text_guard_enabled = body.get("text_guard_enabled")
+    semantic_guard_enabled = body.get("semantic_guard_enabled")
+
+    if bypass_mode is not None:
+        config.bypass_mode = bool(bypass_mode)
+
+    active_p = config.profiles.get(config.breaker.active_profile)
+    if active_p:
+        if tool_guard_enabled is not None:
+            setattr(active_p, "tool_loop_enabled", bool(tool_guard_enabled))
+        if text_guard_enabled is not None:
+            setattr(active_p, "think_loop_enabled", bool(text_guard_enabled))
+        if semantic_guard_enabled is not None:
+            setattr(active_p, "semantic_guard_enabled", bool(semantic_guard_enabled))
 
     if new_api_key:
         clean_key = str(new_api_key).strip()
@@ -144,6 +167,14 @@ async def update_config(request: Request, _admin: str = Depends(verify_admin_aut
     if block_destructive is not None:
         config.tool_guard.block_destructive_patterns = bool(block_destructive)
 
+    if consecutive_violations is not None:
+        try:
+            c_val = int(consecutive_violations)
+            if 1 <= c_val <= 5:
+                config.breaker.consecutive_violations_to_trip = c_val
+        except (ValueError, TypeError):
+            pass
+
     if injection_template:
         template = str(injection_template)
         if "{reason}" not in template:
@@ -157,6 +188,19 @@ async def update_config(request: Request, _admin: str = Depends(verify_admin_aut
         "status": "success",
         "message": "配置已成功保存并立即生效！",
         "active_profile": config.breaker.active_profile,
+        "bypass_mode": getattr(config, "bypass_mode", False),
+    }
+
+
+@admin_router.post("/toggle-bypass")
+async def toggle_bypass(request: Request, _admin: str = Depends(verify_admin_auth)):
+    config = request.app.state.config
+    current = getattr(config, "bypass_mode", False)
+    config.bypass_mode = not current
+    return {
+        "status": "success",
+        "bypass_mode": config.bypass_mode,
+        "message": "已切换为纯透明直通转发模式 (Bypass)" if config.bypass_mode else "已恢复全功能智能熔断防御模式 (Active Protection)",
     }
 
 

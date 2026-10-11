@@ -147,6 +147,82 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
             await client.aclose()
 
         if resp.status_code < 400:
+            # 经手 Token 计量
+            try:
+                r_parsed = resp.json()
+                usage_info = r_parsed.get("usage", {})
+                toks = int(usage_info.get("input_tokens", 0)) + int(usage_info.get("output_tokens", 0))
+                if toks > 0:
+                    metrics.record_tokens_processed(toks)
+                else:
+                    metrics.record_tokens_processed(max(1, len(resp.content) // 4))
+            except Exception:
+                metrics.record_tokens_processed(max(1, len(resp.content) // 4))
+
+            # 全局旁路透明转发模式：直接原样放行，跳过所有检测
+            if getattr(config, "bypass_mode", False):
+                metrics.record_safe_completion(NONSTREAM_BLOCK_LABEL, normalized_model, "READ_ONLY", "旁路直通放行")
+                return Response(
+                    content=resp.content,
+                    status_code=resp.status_code,
+                    media_type=resp.headers.get("content-type", "application/json"),
+                )
+
+            # 针对非流式响应执行循环与工具调用熔断检查
+            try:
+                resp_json = resp.json()
+                tripped_nonstream = False
+                trip_reason_nonstream = ""
+                trip_tier_nonstream = "READ_ONLY"
+
+                scorer = build_scorer(profile, config.immunity)
+                tool_guard = build_tool_guard(config, profile)
+
+                for block in resp_json.get("content", []):
+                    b_type = block.get("type")
+                    if b_type == "text":
+                        text_val = str(block.get("text", ""))
+                        is_loop, r_reason = scorer.feed(text_val)
+                        if not is_loop:
+                            is_loop, r_reason = scorer.flush()
+                        if is_loop:
+                            tripped_nonstream = True
+                            trip_reason_nonstream = r_reason or "Text loop detected"
+                            break
+                    elif b_type == "tool_use":
+                        t_name = str(block.get("name", ""))
+                        t_args = block.get("input", {})
+                        violation, t_reason = tool_guard.inspect(t_name, t_args)
+                        if violation:
+                            tripped_nonstream = True
+                            trip_reason_nonstream = t_reason or violation
+                            tier, _ = tool_guard.guard.inspect_tool_call(t_name, t_args)
+                            trip_tier_nonstream = tier.value
+                            break
+
+                if tripped_nonstream:
+                    metrics.record_circuit_trip(
+                        protocol=NONSTREAM_BLOCK_LABEL,
+                        model=normalized_model,
+                        reason=trip_reason_nonstream,
+                        saved_tokens=ESTIMATED_SAVED_TOKENS,
+                        tool_tier=trip_tier_nonstream,
+                    )
+                    # 保护性截断或替换提示
+                    inj_text = CompliantInjector.build_openai_interruption_content(
+                        trip_reason_nonstream, config.breaker.injection_template
+                    )
+                    resp_json["content"] = [{"type": "text", "text": inj_text}]
+                    metrics.release_stream()
+                    await client.aclose()
+                    return Response(
+                        content=json.dumps(resp_json).encode("utf-8"),
+                        status_code=200,
+                        media_type="application/json",
+                    )
+            except Exception:
+                pass
+
             metrics.record_safe_completion(NONSTREAM_BLOCK_LABEL, normalized_model)
         else:
             metrics.record_upstream_error(
@@ -185,6 +261,27 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
         )
 
     async def sse_generator() -> AsyncGenerator[bytes, None]:
+        if getattr(config, "bypass_mode", False):
+            # 全局旁路透明转发：零检测、零判断、纯透传流
+            try:
+                async for line in _iter_lines_with_deadlines(
+                    upstream_resp,
+                    config.timeouts.time_to_first_token_seconds,
+                    config.timeouts.stream_idle_seconds,
+                ):
+                    if not line:
+                        yield b"\n"
+                        continue
+                    if len(line) > 6:
+                        metrics.record_tokens_processed(max(1, len(line) // 4))
+                    yield line.encode("utf-8") + b"\n\n"
+                metrics.record_safe_completion(TEXT_BLOCK_LABEL, normalized_model, "READ_ONLY", "旁路直通放行")
+            finally:
+                metrics.release_stream()
+                await upstream_resp.aclose()
+                await client.aclose()
+            return
+
         ring = RingBuffer(capacity_bytes=config.limits.ring_buffer_bytes)
         scorer = build_scorer(profile, config.immunity)
         tool_guard = build_tool_guard(config, profile)
@@ -200,6 +297,29 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
         trip_reason: Optional[str] = None
         trip_tier = "READ_ONLY"
         highest_tool_tier = "READ_ONLY"
+
+        # 连续违规容忍度判定（主人配置：连续 N 次检测到违规才熔断）
+        consecutive_required = max(1, int(config.breaker.consecutive_violations_to_trip))
+        violation_streak = 0
+        last_detected_reason: Optional[str] = None
+
+        def record_violation(reason: str, tier: str = "READ_ONLY", is_destructive: bool = False) -> bool:
+            nonlocal violation_streak, last_detected_reason, tripped, trip_reason, trip_tier
+            # 破坏性高危命令零容忍：无论设置多少次，立刻熔断拦截
+            if is_destructive:
+                tripped = True
+                trip_reason = reason
+                trip_tier = tier
+                return True
+
+            violation_streak += 1
+            last_detected_reason = reason
+            if violation_streak >= consecutive_required:
+                tripped = True
+                trip_reason = reason
+                trip_tier = tier
+                return True
+            return False
 
         try:
             async for line in _iter_lines_with_deadlines(
@@ -217,9 +337,7 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
                         if not tripped:
                             is_loop, reason = scorer.flush()
                             if is_loop:
-                                tripped = True
-                                trip_reason = reason
-                                trip_tier = "READ_ONLY"
+                                record_violation(reason or "Loop detected on completion", tier="READ_ONLY")
 
                         if tripped:
                             saved_toks = max(1024, 8192 - ring.total_tokens_seen)
@@ -287,9 +405,8 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
                                         instance.name, instance.arguments_buffer
                                     )
                                     if violation:
-                                        tripped = True
-                                        trip_reason = reason or violation
-                                        trip_tier = instance.safety_tier.value
+                                        is_destruct = (instance.safety_tier.value == "DESTRUCTIVE")
+                                        record_violation(reason or violation, tier=instance.safety_tier.value, is_destructive=is_destruct)
                             active_blocks.discard(block_index)
 
                         elif evt_type == "content_block_delta":
@@ -318,28 +435,23 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
                                         if delta_type == "text_delta":
                                             is_loop, reason = scorer.feed(text)
                                             if is_loop:
-                                                tripped = True
-                                                trip_reason = reason
-                                                trip_tier = "READ_ONLY"
+                                                record_violation(reason or "Text loop detected", tier="READ_ONLY")
                                         elif (
                                             delta_type == "thinking_delta"
                                             and profile.think_loop_enabled
                                         ):
                                             is_loop, reason = scorer.feed(text)
                                             if is_loop:
-                                                tripped = True
-                                                trip_reason = reason
-                                                trip_tier = "READ_ONLY"
+                                                record_violation(reason or "Thinking loop detected", tier="READ_ONLY")
                                             elif think_chars > hard_think_cap:
                                                 # 极端超长兜底保护：仅当超过极端安全硬上限且未处于行动就绪状态时才截断
                                                 tail_ready = scorer.longcat_guard.is_action_ready(scorer.longcat_guard._tail_window)
                                                 if not tail_ready:
-                                                    tripped = True
-                                                    trip_reason = (
-                                                        f"思考链达到极端安全上限保护 ({think_chars} > "
-                                                        f"{hard_think_cap} chars)"
+                                                    record_violation(
+                                                        f"思考链达到极端安全上限保护 ({think_chars} > {hard_think_cap} chars)",
+                                                        tier="READ_ONLY",
+                                                        is_destructive=True,
                                                     )
-                                                    trip_tier = "READ_ONLY"
 
                         if tripped:
                             saved_toks = max(1024, 8192 - ring.total_tokens_seen)

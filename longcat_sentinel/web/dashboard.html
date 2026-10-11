@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LongCat Sentinel 控制台 | 美团大模型智能熔断网关</title>
+    <link rel="icon" type="image/x-icon" href="/app_icon.ico">
+    <link rel="shortcut icon" type="image/x-icon" href="/app_icon.ico">
     <style>
         :root {
             --bg-page: #F8FAFC;
@@ -67,7 +69,8 @@
             width: 42px;
             height: 42px;
             border-radius: var(--radius-md);
-            object-fit: cover;
+            object-fit: contain;
+            background: var(--bg-surface);
             border: 1px solid var(--slate-200);
             box-shadow: var(--shadow-xs);
         }
@@ -203,19 +206,24 @@
         .tab-content { display: none; }
         .tab-content.active { display: block; }
 
-        /* 数据指标卡片组 */
+        /* 数据指标卡片组 - 单行压缩排布 (1 Row) */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 16px;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 14px;
             margin-bottom: 24px;
+        }
+        @media (max-width: 1024px) {
+            .stats-grid {
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            }
         }
 
         .stat-card {
             background: var(--bg-surface);
             border: 1px solid var(--slate-200);
             border-radius: var(--radius-md);
-            padding: 20px;
+            padding: 16px 14px;
             box-shadow: var(--shadow-xs);
             transition: transform 0.15s, box-shadow 0.15s;
         }
@@ -229,19 +237,20 @@
             justify-content: space-between;
             align-items: center;
             color: var(--slate-500);
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 500;
         }
 
         .stat-icon {
-            width: 32px;
-            height: 32px;
+            width: 28px;
+            height: 28px;
             border-radius: var(--radius-sm);
             display: flex;
             align-items: center;
             justify-content: center;
+            flex-shrink: 0;
         }
-        .stat-icon svg { width: 17px; height: 17px; stroke-width: 2; }
+        .stat-icon svg { width: 15px; height: 15px; stroke-width: 2; }
 
         .icon-blue { background: var(--primary-light); color: var(--primary); }
         .icon-yellow { background: var(--warning-light); color: var(--warning); }
@@ -249,11 +258,14 @@
         .icon-green { background: var(--success-light); color: var(--success); }
 
         .stat-value {
-            font-size: 28px;
+            font-size: 24px;
             font-weight: 700;
             color: var(--slate-900);
-            margin-top: 10px;
+            margin-top: 8px;
             letter-spacing: -0.02em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         /* 统一内容面板 */
@@ -789,6 +801,272 @@
             padding: 4px;
         }
         .btn-modal-close:hover { color: var(--slate-900); }
+
+        /* 右上角高级教程按钮 - 蓝白高级风格 */
+        .btn-guide-modal {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            background: linear-gradient(135deg, #EFF6FF 0%, #FFFFFF 100%);
+            border: 1px solid #BFDBFE;
+            color: var(--primary);
+            font-size: 12px;
+            font-weight: 600;
+            padding: 6px 14px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(37, 99, 235, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .btn-guide-modal:hover {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: #FFFFFF;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
+        }
+        .btn-guide-modal svg {
+            width: 15px;
+            height: 15px;
+            stroke-width: 2.2;
+            color: var(--primary);
+            transition: color 0.2s ease;
+        }
+        .btn-guide-modal:hover svg {
+            color: #FFFFFF;
+        }
+
+        /* 模态弹窗大号样式 */
+        .modal-card.modal-card-lg {
+            max-width: 900px;
+            width: 95%;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 0;
+        }
+        .modal-body-scroll {
+            padding: 24px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        /* 苹果极简主义控制中心 (Apple / iOS Minimalist Control Center) */
+        .control-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* 顶部巨幕 Master 卡片 */
+        .apple-master-card {
+            background: #FFFFFF;
+            border: 1px solid #E5E7EB;
+            border-radius: 20px;
+            padding: 52px 32px 44px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+            transition: all 0.25s ease;
+        }
+        .apple-master-card.bypass {
+            background: #FAFAFA;
+        }
+
+        .apple-master-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 5px 14px;
+            border-radius: 9999px;
+            font-size: 13px;
+            font-weight: 500;
+            background: #EFF6FF;
+            color: #2563EB;
+            margin-bottom: 24px;
+            transition: all 0.25s ease;
+        }
+        .apple-badge-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #2563EB;
+        }
+        .apple-master-badge.bypass {
+            background: #F3F4F6;
+            color: #6B7280;
+        }
+        .apple-master-badge.bypass .apple-badge-dot {
+            background: #9CA3AF;
+        }
+
+        .apple-switch-wrap {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 22px;
+        }
+
+        /* 超大 iPhone 经典滑动总开关 */
+        .apple-master-switch {
+            position: relative;
+            display: inline-block;
+            width: 92px;
+            height: 52px;
+            cursor: pointer;
+        }
+        .apple-master-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .apple-master-slider {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #E5E7EB;
+            border-radius: 52px;
+            transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .apple-master-slider:before {
+            position: absolute;
+            content: "";
+            height: 44px;
+            width: 44px;
+            left: 4px;
+            bottom: 4px;
+            background-color: #FFFFFF;
+            border-radius: 50%;
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(0, 0, 0, 0.06);
+        }
+        .apple-master-switch input:checked + .apple-master-slider {
+            background-color: #2563EB;
+        }
+        .apple-master-switch input:checked + .apple-master-slider:before {
+            transform: translateX(40px);
+        }
+
+        .apple-master-title {
+            font-size: 22px;
+            font-weight: 700;
+            color: #111827;
+            letter-spacing: -0.02em;
+            margin-bottom: 8px;
+        }
+        .apple-master-desc {
+            font-size: 14px;
+            color: #6B7280;
+            max-width: 560px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        /* 下半部分 极简 iOS 网格 */
+        .apple-section-header {
+            margin-bottom: 12px;
+            padding-left: 2px;
+        }
+        .apple-section-header h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #111827;
+            letter-spacing: -0.01em;
+        }
+        .apple-section-header p {
+            font-size: 12px;
+            color: #6B7280;
+            margin-top: 2px;
+        }
+
+        .apple-sub-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+        @media (max-width: 768px) {
+            .apple-sub-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .apple-sub-card {
+            background: #FFFFFF;
+            border: 1px solid #E5E7EB;
+            border-radius: 14px;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+        }
+        .apple-sub-card:hover {
+            background-color: #F9FAFB;
+            border-color: #D1D5DB;
+        }
+
+        .apple-sub-info h4 {
+            font-size: 14px;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 3px;
+        }
+        .apple-sub-info p {
+            font-size: 12px;
+            color: #6B7280;
+            line-height: 1.4;
+        }
+
+        /* iOS 风格微型滑动开关 */
+        .apple-mini-switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 28px;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+        .apple-mini-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .apple-mini-slider {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #E5E7EB;
+            border-radius: 28px;
+            transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .apple-mini-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 3px;
+            bottom: 3px;
+            background-color: #FFFFFF;
+            border-radius: 50%;
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12), 0 1px 1px rgba(0, 0, 0, 0.05);
+        }
+        .apple-mini-switch input:checked + .apple-mini-slider {
+            background-color: #2563EB;
+        }
+        .apple-mini-switch input:checked + .apple-mini-slider:before {
+            transform: translateX(20px);
+        }
+
+        .apple-badge-text {
+            font-size: 12px;
+            font-weight: 500;
+            color: #4B5563;
+            background: #F3F4F6;
+            padding: 4px 10px;
+            border-radius: 6px;
+            flex-shrink: 0;
+        }
     </style>
 </head>
 <body>
@@ -796,7 +1074,7 @@
     <!-- 顶部导航 -->
     <header>
         <div class="header-left">
-            <img src="/logo.jpg" alt="LongCat Sentinel" class="brand-avatar" onerror="this.style.display='none'">
+            <img src="/app_icon.ico" alt="LongCat Sentinel" class="brand-avatar" onerror="this.onerror=null;this.src='/logo.jpg'">
             <div class="brand-titles">
                 <h1>LongCat Sentinel <span class="version-badge">v2.3.1</span></h1>
                 <p>美团万亿 MoE 大模型（LongCat 2.5）抗死循环与智能熔断网关</p>
@@ -808,24 +1086,28 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
                 监控看板
             </button>
+            <button class="tab-btn" onclick="switchTab('control')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/></svg>
+                控制中心
+            </button>
             <button class="tab-btn" onclick="switchTab('settings')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-                防护策略与密钥
-            </button>
-            <button class="tab-btn" onclick="switchTab('guide')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10M6 10h10"/></svg>
-                客户端接入指南
+                系统设置
             </button>
         </nav>
 
         <div class="header-right">
+            <button class="btn-guide-modal" onclick="openGuideModal()" title="客户端接入指南与配置命令">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                <span>接入指南</span>
+            </button>
             <button class="btn-health-check" onclick="runDiagnostics()">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                 连通性诊断
             </button>
-            <div class="status-badge">
-                <span class="status-dot"></span>
-                <span>网关运行中</span>
+            <div class="status-badge" id="header-status-badge">
+                <span class="status-dot" id="header-status-dot"></span>
+                <span id="header-status-text">智能防御中</span>
             </div>
         </div>
     </header>
@@ -856,12 +1138,12 @@
 
                 <div class="stat-card">
                     <div class="stat-header">
-                        <span>拦截死循环 / 危险命令</span>
-                        <div class="stat-icon icon-red">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        <span>经手 Token 总量 (Processed)</span>
+                        <div class="stat-icon icon-purple">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg>
                         </div>
                     </div>
-                    <div class="stat-value" id="stat-tripped" style="color: var(--danger);">0</div>
+                    <div class="stat-value" id="stat-tokens" style="color: #6366F1;">0</div>
                 </div>
 
                 <div class="stat-card">
@@ -872,6 +1154,16 @@
                         </div>
                     </div>
                     <div class="stat-value" id="stat-saved" style="color: var(--success);">0</div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-header">
+                        <span>拦截死循环 / 危险命令</span>
+                        <div class="stat-icon icon-red">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                        </div>
+                    </div>
+                    <div class="stat-value" id="stat-tripped" style="color: var(--danger);">0</div>
                 </div>
             </div>
 
@@ -919,7 +1211,126 @@
             </div>
         </div>
 
-        <!-- 标签页 2：防护策略与密钥设置 -->
+        <!-- 标签页 2：总控控制中心 (Apple 极简主义设计) -->
+        <div id="tab-control" class="tab-content">
+            <div class="control-container">
+                <!-- 上半部分: 极简 Apple 巨幕总控大开关 -->
+                <div class="apple-master-card" id="master-hero-box">
+                    <div class="apple-master-badge" id="master-status-badge">
+                        <span class="apple-badge-dot" id="master-badge-dot"></span>
+                        <span id="master-badge-text">全局智能熔断防御运行中</span>
+                    </div>
+
+                    <div class="apple-switch-wrap">
+                        <label class="apple-master-switch" title="点击切换全局防御 / 旁路模式">
+                            <input type="checkbox" id="master-switch-checkbox" checked onchange="toggleMasterDefense()">
+                            <span class="apple-master-slider"></span>
+                        </label>
+                    </div>
+
+                    <h2 class="apple-master-title" id="master-title-text">全局防御模式 (Active)</h2>
+                    <p class="apple-master-desc" id="master-desc-text">
+                        开启时全量执行抗死循环与智能熔断；关闭时网关仅作为纯透明代理转发，零拦截零延迟。
+                    </p>
+                </div>
+
+                <!-- 下半部分: 8 联纯净微列表 -->
+                <div>
+                    <div class="apple-section-header">
+                        <h3>防御能力细分控制</h3>
+                        <p>可独立启闭各项防御规则，修改即刻热生效</p>
+                    </div>
+
+                    <div class="apple-sub-grid">
+                        <!-- 1. 工具死循环 -->
+                        <div class="apple-sub-card">
+                            <div class="apple-sub-info">
+                                <h4>工具调用死循环守卫</h4>
+                                <p>监测重复参数重复调用、高频乒乓振荡，截断 Agent 盲目空转</p>
+                            </div>
+                            <label class="apple-mini-switch">
+                                <input type="checkbox" id="ctrl-tool-guard" checked onchange="toggleFeatureGuard('tool_guard_enabled', this.checked)">
+                                <span class="apple-mini-slider"></span>
+                            </label>
+                        </div>
+
+                        <!-- 2. N-gram 文本周期性死循环 -->
+                        <div class="apple-sub-card">
+                            <div class="apple-sub-info">
+                                <h4>N-gram 文本周期性阻断</h4>
+                                <p>自动识别退化循环字句（如疯狂复读同一段话或代码行），节约上下文</p>
+                            </div>
+                            <label class="apple-mini-switch">
+                                <input type="checkbox" id="ctrl-text-guard" checked onchange="toggleFeatureGuard('text_guard_enabled', this.checked)">
+                                <span class="apple-mini-slider"></span>
+                            </label>
+                        </div>
+
+                        <!-- 3. 语义停滞与探索预算 -->
+                        <div class="apple-sub-card">
+                            <div class="apple-sub-info">
+                                <h4>语义停滞与探索守卫</h4>
+                                <p>基于中英文 Jaccard 重合度与 Fuzzy 相似度，阻断语义原地兜圈现象</p>
+                            </div>
+                            <label class="apple-mini-switch">
+                                <input type="checkbox" id="ctrl-semantic-guard" checked onchange="toggleFeatureGuard('semantic_guard_enabled', this.checked)">
+                                <span class="apple-mini-slider"></span>
+                            </label>
+                        </div>
+
+                        <!-- 4. 混淆逃逸与高危破坏拦截 -->
+                        <div class="apple-sub-card">
+                            <div class="apple-sub-info">
+                                <h4>混淆逃逸与高危命令拦截</h4>
+                                <p>防御 Base64/管道动态解码执行、危险系统格式化与 rm -rf 破坏</p>
+                            </div>
+                            <label class="apple-mini-switch">
+                                <input type="checkbox" id="ctrl-destructive-guard" checked onchange="toggleFeatureGuard('block_destructive', this.checked)">
+                                <span class="apple-mini-slider"></span>
+                            </label>
+                        </div>
+
+                        <!-- 5. 容忍度连续违规机制 -->
+                        <div class="apple-sub-card">
+                            <div class="apple-sub-info">
+                                <h4>容忍度连续违规机制</h4>
+                                <p>允许单次探索重试，连续违规达到阈值才触发熔断，消除偶发误杀</p>
+                            </div>
+                            <span class="apple-badge-text" id="tag-viol-threshold">阈值: 2次</span>
+                        </div>
+
+                        <!-- 6. 流式 SSE 动态闭合 -->
+                        <div class="apple-sub-card">
+                            <div class="apple-sub-info">
+                                <h4>流式 SSE 协议合规注入</h4>
+                                <p>熔断触发时毫秒级闭合未封闭 JSON 语法块，客户端不崩盘报错</p>
+                            </div>
+                            <span class="apple-badge-text">已激活</span>
+                        </div>
+
+                        <!-- 7. 非流式响应离线审查 -->
+                        <div class="apple-sub-card">
+                            <div class="apple-sub-info">
+                                <h4>非流式完整内容审查</h4>
+                                <p>为 stream=false 的常规单次交互提供全量静态结构扫描与安全拦截</p>
+                            </div>
+                            <span class="apple-badge-text">全量支持</span>
+                        </div>
+
+                        <!-- 8. 临时构建目录放行 -->
+                        <div class="apple-sub-card">
+                            <div class="apple-sub-info">
+                                <h4>临时构建目录安全放行</h4>
+                                <p>针对 dist/tmp/build/node_modules 等工程临时相对路径智能免检</p>
+                            </div>
+                            <span class="apple-badge-text">智能放行</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 标签页 3：系统设置 (原防护策略与密钥设置) -->
         <div id="tab-settings" class="tab-content">
             <div class="content-panel">
                 <div class="panel-heading">
@@ -1044,12 +1455,39 @@
                     </div>
                 </div>
 
-                <!-- 3. 高危指令拦截 -->
+                <!-- 3. 连续检测容忍度设置 (防误拦截) -->
+                <div class="form-section">
+                    <div class="form-section-header">
+                        <div class="form-section-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            连续违规容忍阈值 (Consecutive Violations Tripwire)
+                        </div>
+                    </div>
+                    <div class="form-desc">
+                        为了<strong>最大限度减少误拦截</strong>，设置连续多少次检测到循环/停滞异常才正式熔断阻断（默认连续 2 次）：
+                    </div>
+                    <div style="display: flex; gap: 12px; margin-top: 10px;">
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                            <input type="radio" name="consecutive-violations" value="1" id="radio-viol-1">
+                            <span>1 次（检测到即刻拦截）</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                            <input type="radio" name="consecutive-violations" value="2" id="radio-viol-2" checked>
+                            <span style="font-weight: 600; color: var(--primary);">连续 2 次（推荐，防误杀）</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                            <input type="radio" name="consecutive-violations" value="3" id="radio-viol-3">
+                            <span>连续 3 次（极其宽松）</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 4. 高危指令拦截 -->
                 <div class="form-section">
                     <div class="switch-row">
                         <div class="switch-info">
                             <h4>拦截高危破坏性命令 (Anti-Destructive Lock)</h4>
-                            <p>通过入参语法树深度扫描 <code>rm -rf /</code>、格式化、删库、fork bomb 等危险行为，1 毫秒内硬性拦截阻断。</p>
+                            <p>通过入参语法树深度扫描 <code>rm -rf /</code>、格式化、删库、fork bomb 等危险行为，1 毫秒内硬性拦截阻断（始终零容忍）。</p>
                         </div>
                         <label class="switch">
                             <input type="checkbox" id="switch-destructive" checked>
@@ -1087,150 +1525,162 @@
             </div>
         </div>
 
-        <!-- 标签页 3：客户端极简接入指南 -->
-        <div id="tab-guide" class="tab-content">
-            <div class="guide-container">
+    </main>
 
-                <!-- 1. Claude Code -->
-                <div class="guide-client-card">
-                    <div class="guide-client-header">
-                        <div class="guide-client-title">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
-                            Claude Code 命令行智能体接入
+    <!-- 客户端极简接入指南弹窗 Modal (右上角一键唤出) -->
+    <div id="modal-guide" class="modal-overlay">
+        <div class="modal-card modal-card-lg">
+            <div class="modal-header" style="padding: 16px 24px; border-bottom: 1px solid var(--slate-200); margin-bottom: 0;">
+                <h3>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                    客户端接入极速配置指南 (Client Setup Guide)
+                </h3>
+                <button class="btn-modal-close" onclick="closeGuideModal()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="modal-body-scroll">
+                <div class="guide-container">
+                    <!-- 1. Claude Code -->
+                    <div class="guide-client-card">
+                        <div class="guide-client-header">
+                            <div class="guide-client-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></svg>
+                                Claude Code 命令行智能体接入
+                            </div>
+                            <span class="client-tag">Anthropic 原生路由 (/v1/messages)</span>
                         </div>
-                        <span class="client-tag">Anthropic 原生路由 (/v1/messages)</span>
-                    </div>
-                    <div class="guide-client-body">
-                        <div class="guide-step">
-                            <div class="guide-step-title">方法 A：通过终端环境变量启动（推荐）</div>
-                            <div class="code-box">
-                                <div class="code-box-content" id="snippet-claude-ps">$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8080"; $env:ANTHROPIC_API_KEY="[YOUR_TOKEN]"; claude</div>
-                                <button class="btn-code-copy" onclick="copyDynamicSnippet('snippet-claude-ps')">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                                    复制 PowerShell
-                                </button>
+                        <div class="guide-client-body">
+                            <div class="guide-step">
+                                <div class="guide-step-title">方法 A：通过终端环境变量启动（推荐）</div>
+                                <div class="code-box">
+                                    <div class="code-box-content" id="snippet-claude-ps">$env:ANTHROPIC_BASE_URL="http://127.0.0.1:8080"; $env:ANTHROPIC_API_KEY="[YOUR_TOKEN]"; claude</div>
+                                    <button class="btn-code-copy" onclick="copyDynamicSnippet('snippet-claude-ps')">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                                        复制 PowerShell
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="guide-step" style="margin-top: 10px;">
+                                <div class="guide-step-title">macOS / Linux Bash 启动命令</div>
+                                <div class="code-box">
+                                    <div class="code-box-content" id="snippet-claude-bash">export ANTHROPIC_BASE_URL="http://127.0.0.1:8080" && export ANTHROPIC_API_KEY="[YOUR_TOKEN]" && claude</div>
+                                    <button class="btn-code-copy" onclick="copyDynamicSnippet('snippet-claude-bash')">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                                        复制 Bash
+                                    </button>
+                                </div>
                             </div>
                         </div>
+                    </div>
 
-                        <div class="guide-step" style="margin-top: 10px;">
-                            <div class="guide-step-title">macOS / Linux Bash 启动命令</div>
-                            <div class="code-box">
-                                <div class="code-box-content" id="snippet-claude-bash">export ANTHROPIC_BASE_URL="http://127.0.0.1:8080" && export ANTHROPIC_API_KEY="[YOUR_TOKEN]" && claude</div>
-                                <button class="btn-code-copy" onclick="copyDynamicSnippet('snippet-claude-bash')">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                                    复制 Bash
-                                </button>
+                    <!-- 2. Cursor IDE -->
+                    <div class="guide-client-card">
+                        <div class="guide-client-header">
+                            <div class="guide-client-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="18" height="18" x="3" y="3" rx="2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
+                                Cursor AI 代码编辑器配置
                             </div>
+                            <span class="client-tag">OpenAI 兼容协议 (/v1/chat/completions)</span>
+                        </div>
+                        <div class="guide-client-body">
+                            <div class="form-desc" style="margin-bottom: 8px;">
+                                打开 Cursor 设置 (Settings) $\to$ <b>Models</b> $\to$ 开启 <b>OpenAI API Key</b>，填入以下参数：
+                            </div>
+                            <table class="param-table">
+                                <tr>
+                                    <td class="param-key">OpenAI Base URL</td>
+                                    <td class="param-val"><code id="guide-cursor-url">http://127.0.0.1:8080/v1</code></td>
+                                </tr>
+                                <tr>
+                                    <td class="param-key">API Key</td>
+                                    <td class="param-val"><code id="guide-cursor-key">[YOUR_TOKEN]</code></td>
+                                </tr>
+                                <tr>
+                                    <td class="param-key">Model Name</td>
+                                    <td class="param-val"><code>LongCat-2.5-Preview</code></td>
+                                </tr>
+                            </table>
                         </div>
                     </div>
-                </div>
 
-                <!-- 2. Cursor IDE -->
-                <div class="guide-client-card">
-                    <div class="guide-client-header">
-                        <div class="guide-client-title">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="18" height="18" x="3" y="3" rx="2"/><line x1="8" x2="16" y1="12" y2="12"/></svg>
-                            Cursor AI 代码编辑器配置
+                    <!-- 3. VS Code (Cline / Roo Code / Continue) -->
+                    <div class="guide-client-card">
+                        <div class="guide-client-header">
+                            <div class="guide-client-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+                                VS Code 插件 (Cline / Roo Code / Continue)
+                            </div>
+                            <span class="client-tag">Anthropic 或 OpenAI 双轨兼容</span>
                         </div>
-                        <span class="client-tag">OpenAI 兼容协议 (/v1/chat/completions)</span>
-                    </div>
-                    <div class="guide-client-body">
-                        <div class="form-desc" style="margin-bottom: 8px;">
-                            打开 Cursor 设置 (Settings) $\to$ <b>Models</b> $\to$ 开启 <b>OpenAI API Key</b>，填入以下参数：
+                        <div class="guide-client-body">
+                            <div class="form-desc" style="margin-bottom: 8px;">
+                                在扩展设置中选择 <b>OpenAI Compatible</b> 或 <b>Anthropic Compatible</b>：
+                            </div>
+                            <table class="param-table">
+                                <tr>
+                                    <td class="param-key">API Provider</td>
+                                    <td class="param-val"><code>OpenAI Compatible</code> 或 <code>Anthropic</code></td>
+                                </tr>
+                                <tr>
+                                    <td class="param-key">Base URL</td>
+                                    <td class="param-val"><code>http://127.0.0.1:8080/v1</code></td>
+                                </tr>
+                                <tr>
+                                    <td class="param-key">API Key</td>
+                                    <td class="param-val"><code id="guide-cline-key">[YOUR_TOKEN]</code></td>
+                                </tr>
+                                <tr>
+                                    <td class="param-key">Model ID</td>
+                                    <td class="param-val"><code>LongCat-2.5-Preview</code></td>
+                                </tr>
+                            </table>
                         </div>
-                        <table class="param-table">
-                            <tr>
-                                <td class="param-key">OpenAI Base URL</td>
-                                <td class="param-val"><code id="guide-cursor-url">http://127.0.0.1:8080/v1</code></td>
-                            </tr>
-                            <tr>
-                                <td class="param-key">API Key</td>
-                                <td class="param-val"><code id="guide-cursor-key">[YOUR_TOKEN]</code></td>
-                            </tr>
-                            <tr>
-                                <td class="param-key">Model Name</td>
-                                <td class="param-val"><code>LongCat-2.5-Preview</code></td>
-                            </tr>
-                        </table>
                     </div>
-                </div>
 
-                <!-- 3. VS Code (Cline / Roo Code / Continue) -->
-                <div class="guide-client-card">
-                    <div class="guide-client-header">
-                        <div class="guide-client-title">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
-                            VS Code 插件 (Cline / Roo Code / Continue)
+                    <!-- 4. 桌面客户端 (Cherry Studio / Chatbox) -->
+                    <div class="guide-client-card">
+                        <div class="guide-client-header">
+                            <div class="guide-client-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+                                桌面客户端 (Cherry Studio / Chatbox / NextChat)
+                            </div>
+                            <span class="client-tag">极简接入</span>
                         </div>
-                        <span class="client-tag">Anthropic 或 OpenAI 双轨兼容</span>
-                    </div>
-                    <div class="guide-client-body">
-                        <div class="form-desc" style="margin-bottom: 8px;">
-                            在扩展设置中选择 <b>OpenAI Compatible</b> 或 <b>Anthropic Compatible</b>：
+                        <div class="guide-client-body">
+                            <div class="form-desc" style="margin-bottom: 8px;">
+                                在客户端中新建自定义提供商（OpenAI 规范）：
+                            </div>
+                            <table class="param-table">
+                                <tr>
+                                    <td class="param-key">API 地址 (Base URL)</td>
+                                    <td class="param-val"><code>http://127.0.0.1:8080/v1</code></td>
+                                </tr>
+                                <tr>
+                                    <td class="param-key">API Key</td>
+                                    <td class="param-val"><code id="guide-cherry-key">[YOUR_TOKEN]</code></td>
+                                </tr>
+                                <tr>
+                                    <td class="param-key">模型列表</td>
+                                    <td class="param-val"><code>LongCat-2.5-Preview</code>, <code>LongCat-2.0</code></td>
+                                </tr>
+                            </table>
                         </div>
-                        <table class="param-table">
-                            <tr>
-                                <td class="param-key">API Provider</td>
-                                <td class="param-val"><code>OpenAI Compatible</code> 或 <code>Anthropic</code></td>
-                            </tr>
-                            <tr>
-                                <td class="param-key">Base URL</td>
-                                <td class="param-val"><code>http://127.0.0.1:8080/v1</code></td>
-                            </tr>
-                            <tr>
-                                <td class="param-key">API Key</td>
-                                <td class="param-val"><code id="guide-cline-key">[YOUR_TOKEN]</code></td>
-                            </tr>
-                            <tr>
-                                <td class="param-key">Model ID</td>
-                                <td class="param-val"><code>LongCat-2.5-Preview</code></td>
-                            </tr>
-                        </table>
                     </div>
-                </div>
 
-                <!-- 4. 桌面客户端 (Cherry Studio / Chatbox) -->
-                <div class="guide-client-card">
-                    <div class="guide-client-header">
-                        <div class="guide-client-title">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
-                            桌面客户端 (Cherry Studio / Chatbox / NextChat)
+                    <!-- 5. Python SDK 直连示例 -->
+                    <div class="guide-client-card">
+                        <div class="guide-client-header">
+                            <div class="guide-client-title">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg>
+                                Python SDK 代码直连示例
+                            </div>
+                            <span class="client-tag">OpenAI Python SDK</span>
                         </div>
-                        <span class="client-tag">极简接入</span>
-                    </div>
-                    <div class="guide-client-body">
-                        <div class="form-desc" style="margin-bottom: 8px;">
-                            在客户端中新建自定义提供商（OpenAI 规范）：
-                        </div>
-                        <table class="param-table">
-                            <tr>
-                                <td class="param-key">API 地址 (Base URL)</td>
-                                <td class="param-val"><code>http://127.0.0.1:8080/v1</code></td>
-                            </tr>
-                            <tr>
-                                <td class="param-key">API Key</td>
-                                <td class="param-val"><code id="guide-cherry-key">[YOUR_TOKEN]</code></td>
-                            </tr>
-                            <tr>
-                                <td class="param-key">模型列表</td>
-                                <td class="param-val"><code>LongCat-2.5-Preview</code>, <code>LongCat-2.0</code></td>
-                            </tr>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- 5. Python SDK 直连示例 -->
-                <div class="guide-client-card">
-                    <div class="guide-client-header">
-                        <div class="guide-client-title">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/></svg>
-                            Python SDK 代码直连示例
-                        </div>
-                        <span class="client-tag">OpenAI Python SDK</span>
-                    </div>
-                    <div class="guide-client-body">
-                        <div class="code-box">
-                            <div class="code-box-content" id="snippet-python">from openai import OpenAI
+                        <div class="guide-client-body">
+                            <div class="code-box">
+                                <div class="code-box-content" id="snippet-python">from openai import OpenAI
 
 client = OpenAI(
     base_url="http://127.0.0.1:8080/v1",
@@ -1245,17 +1695,20 @@ resp = client.chat.completions.create(
 for chunk in resp:
     if chunk.choices and chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="", flush=True)</div>
-                            <button class="btn-code-copy" onclick="copyDynamicSnippet('snippet-python')">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-                                复制代码
-                            </button>
+                                <button class="btn-code-copy" onclick="copyDynamicSnippet('snippet-python')">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                                    复制代码
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
-
+            </div>
+            <div style="padding: 12px 24px; background: var(--slate-50); border-top: 1px solid var(--slate-200); text-align: right;">
+                <button class="btn-save" onclick="closeGuideModal()" style="padding: 6px 16px; font-size: 12px;">关闭指南</button>
             </div>
         </div>
-    </main>
+    </div>
 
     <!-- 诊断弹窗 Modal -->
     <div id="modal-diagnostics" class="modal-overlay">
@@ -1345,9 +1798,119 @@ for chunk in resp:
             const targetTab = document.getElementById('tab-' + tabId);
             if (targetTab) targetTab.classList.add('active');
 
-            if (tabId === 'settings') {
+            if (tabId === 'settings' || tabId === 'control') {
                 loadSettings();
             }
+        }
+
+        function openGuideModal() {
+            const m = document.getElementById('modal-guide');
+            if (m) m.classList.add('active');
+        }
+
+        function closeGuideModal() {
+            const m = document.getElementById('modal-guide');
+            if (m) m.classList.remove('active');
+        }
+
+        // 渲染主开关与全局防御状态 (Apple iOS 极简交互)
+        function renderMasterSwitch(isBypass) {
+            const cardEl = document.getElementById('master-hero-box');
+            const checkboxEl = document.getElementById('master-switch-checkbox');
+            const badgeEl = document.getElementById('master-status-badge');
+            const badgeTextEl = document.getElementById('master-badge-text');
+            const titleEl = document.getElementById('master-title-text');
+            const descEl = document.getElementById('master-desc-text');
+            
+            const headerBadgeEl = document.getElementById('header-status-badge');
+            const headerDotEl = document.getElementById('header-status-dot');
+            const headerTextEl = document.getElementById('header-status-text');
+
+            if (checkboxEl) checkboxEl.checked = !isBypass;
+
+            if (isBypass) {
+                if (cardEl) cardEl.classList.add('bypass');
+                if (badgeEl) badgeEl.classList.add('bypass');
+                if (badgeTextEl) badgeTextEl.innerText = "纯透明直通转发中 (Bypass)";
+                if (titleEl) titleEl.innerText = "纯透明直通转发模式";
+                if (descEl) descEl.innerText = "智能熔断与安全检测已完全旁路。网关仅作为高速透明代理，不对内容做任何判断与拦截，零延迟直通美团集群。";
+
+                if (headerBadgeEl) {
+                    headerBadgeEl.style.background = "#FFFBEB";
+                    headerBadgeEl.style.color = "#D97706";
+                    headerBadgeEl.style.borderColor = "#FDE68A";
+                }
+                if (headerDotEl) {
+                    headerDotEl.style.background = "#D97706";
+                    headerDotEl.style.boxShadow = "0 0 0 3px rgba(217, 119, 6, 0.2)";
+                }
+                if (headerTextEl) headerTextEl.innerText = "透明旁路中";
+            } else {
+                if (cardEl) cardEl.classList.remove('bypass');
+                if (badgeEl) badgeEl.classList.remove('bypass');
+                if (badgeTextEl) badgeTextEl.innerText = "全局智能熔断防御运行中";
+                if (titleEl) titleEl.innerText = "全局智能熔断防护模式";
+                if (descEl) descEl.innerText = "开启时全量执行抗死循环、语义停滞阻断与高危提权拦截；关闭时网关仅作为纯透明代理转发，零拦截零延迟。";
+
+                if (headerBadgeEl) {
+                    headerBadgeEl.style.background = "var(--success-light)";
+                    headerBadgeEl.style.color = "var(--success)";
+                    headerBadgeEl.style.borderColor = "var(--success-border)";
+                }
+                if (headerDotEl) {
+                    headerDotEl.style.background = "var(--success)";
+                    headerDotEl.style.boxShadow = "0 0 0 3px rgba(5, 150, 105, 0.2)";
+                }
+                if (headerTextEl) headerTextEl.innerText = "智能防御中";
+            }
+        }
+
+        // 切换总开关
+        async function toggleMasterDefense() {
+            const checkboxEl = document.getElementById('master-switch-checkbox');
+            try {
+                const res = await fetch('/api/admin/toggle-bypass', {
+                    method: 'POST',
+                    headers: adminHeaders()
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    renderMasterSwitch(data.bypass_mode);
+                    showToast(data.message || (data.bypass_mode ? '已切换为透明旁路直通模式' : '已恢复智能熔断防御模式'));
+                } else if (res.status === 401) {
+                    if (checkboxEl) checkboxEl.checked = !checkboxEl.checked;
+                    showToast('操作失败：管理口令验证未通过');
+                } else {
+                    if (checkboxEl) checkboxEl.checked = !checkboxEl.checked;
+                    showToast('切换失败，HTTP ' + res.status);
+                }
+            } catch (e) {
+                if (checkboxEl) checkboxEl.checked = !checkboxEl.checked;
+                showToast('网络请求失败：' + e.message);
+            }
+        }
+
+        // 切换功能微矩阵小开关
+        async function toggleFeatureGuard(key, isChecked) {
+            try {
+                const payload = { [key]: isChecked };
+                const res = await fetch('/api/admin/config', {
+                    method: 'POST',
+                    headers: adminHeaders({ 'Content-Type': 'application/json' }),
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    showToast(isChecked ? '已激活该防御特性' : '已临时停用该防御特性');
+                } else {
+                    showToast('保存失败 (HTTP ' + res.status + ')');
+                }
+            } catch (e) {
+                showToast('请求失败：' + e.message);
+            }
+        }
+
+        function updateTagStatus(key, isChecked) {
+            // 极简 iOS 风格下由滑块自身呈现状态，无需冗余文本标签
         }
 
         function togglePasswordVisibility(id, btn) {
@@ -1502,8 +2065,44 @@ for chunk in resp:
                     updateGuideSnippets(currentGatewayToken);
                 }
 
+                // 同步全局总防御开关状态
+                if (data.bypass_mode !== undefined) {
+                    renderMasterSwitch(data.bypass_mode);
+                }
+
+                // 同步控制中心 8 联微矩阵小开关
+                const toolCtrl = document.getElementById('ctrl-tool-guard');
+                if (toolCtrl && data.tool_guard_enabled !== undefined) {
+                    toolCtrl.checked = data.tool_guard_enabled;
+                    updateTagStatus('tool_guard_enabled', data.tool_guard_enabled);
+                }
+                const textCtrl = document.getElementById('ctrl-text-guard');
+                if (textCtrl && data.text_guard_enabled !== undefined) {
+                    textCtrl.checked = data.text_guard_enabled;
+                    updateTagStatus('text_guard_enabled', data.text_guard_enabled);
+                }
+                const semCtrl = document.getElementById('ctrl-semantic-guard');
+                if (semCtrl && data.semantic_guard_enabled !== undefined) {
+                    semCtrl.checked = data.semantic_guard_enabled;
+                    updateTagStatus('semantic_guard_enabled', data.semantic_guard_enabled);
+                }
+                const destCtrl = document.getElementById('ctrl-destructive-guard');
+                if (destCtrl && data.block_destructive !== undefined) {
+                    destCtrl.checked = data.block_destructive;
+                    updateTagStatus('block_destructive', data.block_destructive);
+                }
+                const violTag = document.getElementById('tag-viol-threshold');
+                if (violTag && data.consecutive_violations_to_trip !== undefined) {
+                    violTag.innerText = '当前阈值: ' + data.consecutive_violations_to_trip + '次';
+                }
+
                 if (data.active_profile) {
                     selectProfile(data.active_profile);
+                }
+                if (data.consecutive_violations_to_trip !== undefined) {
+                    const cVal = String(data.consecutive_violations_to_trip);
+                    const radio = document.getElementById('radio-viol-' + cVal);
+                    if (radio) radio.checked = true;
                 }
                 if (data.block_destructive !== undefined) {
                     document.getElementById('switch-destructive').checked = data.block_destructive;
@@ -1523,6 +2122,12 @@ for chunk in resp:
             const template = document.getElementById('input-template').value.trim();
             const statusText = document.getElementById('save-status-text');
 
+            let consecutiveVal = 2;
+            const checkedRadio = document.querySelector('input[name="consecutive-violations"]:checked');
+            if (checkedRadio) {
+                consecutiveVal = parseInt(checkedRadio.value, 10) || 2;
+            }
+
             statusText.innerText = "正在保存配置...";
             statusText.style.color = "var(--slate-600)";
 
@@ -1530,6 +2135,7 @@ for chunk in resp:
                 const payload = {
                     active_profile: currentProfile,
                     block_destructive: blockDestructive,
+                    consecutive_violations_to_trip: consecutiveVal,
                     injection_template: template
                 };
                 if (apiKey) {
@@ -1664,6 +2270,12 @@ for chunk in resp:
                     document.getElementById('stat-tripped').innerText = data.tripped_circuits ?? 0;
                     document.getElementById('stat-saved').innerText = (data.saved_tokens_estimate ?? 0).toLocaleString();
 
+                    const tokens = data.total_tokens_processed ?? 0;
+                    const tokensEl = document.getElementById('stat-tokens');
+                    if (tokensEl) {
+                        tokensEl.innerText = tokens > 1000000 ? (tokens / 1000000).toFixed(2) + ' M' : tokens.toLocaleString();
+                    }
+
                     const tbody = document.getElementById('audit-table-body');
                     if (data.audit_events && data.audit_events.length > 0) {
                         tbody.innerHTML = data.audit_events.map(ev => `
@@ -1682,6 +2294,13 @@ for chunk in resp:
                 }
             } catch (e) { }
         }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeGuideModal();
+                closeDiagnostics();
+            }
+        });
 
         setInterval(updateDashboard, 2000);
         updateDashboard();

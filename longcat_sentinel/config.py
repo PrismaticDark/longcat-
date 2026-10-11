@@ -312,6 +312,9 @@ class ProfileConfig(BaseModel):
     longcat_memory_search_threshold: int = Field(default=8, ge=2)
     longcat_hesitation_threshold: int = Field(default=8, ge=2)
     longcat_standalone_hesitation_threshold: int = Field(default=10, ge=2)
+    semantic_guard_enabled: bool = Field(default=True)
+    semantic_similarity_threshold: float = Field(default=0.82, ge=0.5, le=1.0)
+    semantic_min_segment_chars: int = Field(default=60, ge=20)
 
 
 class BreakerConfig(BaseModel):
@@ -320,6 +323,7 @@ class BreakerConfig(BaseModel):
     injection_template: str = Field(
         default="\n\n[LongCat Sentinel 保护性中断] ⚠️ 检测到输出内容/思考链陷入高频周期循环或触发高危拦截（原因：{reason}）。网关已保护性截断以节约 Token。"
     )
+    consecutive_violations_to_trip: int = Field(default=2, ge=1, le=5)
 
 
 class ToolGuardConfig(BaseModel):
@@ -349,6 +353,7 @@ class GatewayConfig(BaseModel):
     # Dynamic runtime state
     dev_mode: bool = Field(default=False)
     actual_bound_port: Optional[int] = Field(default=None)
+    bypass_mode: bool = Field(default=False)
 
     @model_validator(mode="after")
     def validate_security_invariants(self) -> GatewayConfig:

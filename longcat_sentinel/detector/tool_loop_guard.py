@@ -132,10 +132,24 @@ class ToolLoopGuard:
 
     # -- ledger helpers -------------------------------------------------------
     def _prune(self, now: float, ttl: float) -> None:
+        # 1. 绝对 TTL 过期清理
         while self._ledger and (now - self._ledger[0][0]) > ttl:
             self._ledger.popleft()
         while self._skeleton_ledger and (now - self._skeleton_ledger[0][0]) > ttl:
             self._skeleton_ledger.popleft()
+
+        # 2. 探索间隔半衰期衰减 (Exploration Budget Decay):
+        # 如果上一次调用与本次调用间隔超过 60 秒（说明经过了用户思考、长时间测试或长推理），
+        # 自动衰减削减早期累积的旧重复痕迹，杜绝长会话中隔了很久调用相同命令被误判
+        if len(self._ledger) > 1:
+            last_ts = self._ledger[-1][0]
+            if (now - last_ts) >= 60.0:
+                # 衰减早于 60s 前的旧探测记录
+                cutoff = now - 60.0
+                while self._ledger and self._ledger[0][0] < cutoff and len(self._ledger) > 1:
+                    self._ledger.popleft()
+                while self._skeleton_ledger and self._skeleton_ledger[0][0] < cutoff and len(self._skeleton_ledger) > 1:
+                    self._skeleton_ledger.popleft()
 
     def _recent_signatures(self, limit: int) -> list:
         return [signature for _, signature in list(self._ledger)[-limit:]]

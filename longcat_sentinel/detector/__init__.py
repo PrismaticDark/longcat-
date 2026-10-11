@@ -20,6 +20,7 @@ from longcat_sentinel.detector.parallel_tool_tracker import (
     ToolCallInstance,
 )
 from longcat_sentinel.detector.ring_buffer import RingBuffer
+from longcat_sentinel.detector.semantic_guard import SemanticStagnationGuard
 from longcat_sentinel.detector.tool_loop_guard import ToolLoopGuard, call_signature
 
 __all__ = [
@@ -32,6 +33,7 @@ __all__ = [
     "ParallelToolTracker",
     "ToolCallInstance",
     "RingBuffer",
+    "SemanticStagnationGuard",
     "ToolLoopGuard",
     "call_signature",
 ]

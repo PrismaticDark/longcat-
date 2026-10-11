@@ -1208,6 +1208,88 @@ class TestSelfLoopHeuristicsAntiFalsePositive(unittest.TestCase):
         self.assertEqual(v5, "tool_loop", "True consecutive no-progress loop was not tripped!")
         self.assertIn("Repeated", r5)
 
+    def test_semantic_stagnation_guard_trips_on_lexical_churn(self):
+        """测试语义停滞分析器能识别换词但不推进的空转"""
+        from longcat_sentinel.detector.semantic_guard import SemanticStagnationGuard
+
+        guard = SemanticStagnationGuard(enabled=True, similarity_threshold=0.75, min_segment_chars=30)
+        # 段落 1
+        is_loop, _ = guard.feed("我们需要排查网络连接超时的问题，仔细分析一下连接失败的原因。\n")
+        self.assertFalse(is_loop)
+        # 段落 2：高度重合的同义空转
+        is_loop, reason = guard.feed("我们必须排查网络连接超时的问题，认真分析一下连接失败的根本原因。\n")
+        self.assertTrue(is_loop)
+        self.assertIn("Semantic stagnation detected", reason)
+
+    def test_semantic_guard_trips_on_cross_step_ping_pong_loop(self):
+        """测试多步滑窗交叉矩阵能成功捕获 A -> B -> A 环形改写乒乓打转"""
+        from longcat_sentinel.detector.semantic_guard import SemanticStagnationGuard
+
+        guard = SemanticStagnationGuard(enabled=True, similarity_threshold=0.76, min_segment_chars=25)
+        # 步骤 A: 检查连接池
+        is_loop, _ = guard.feed("我们需要先检查数据库的连接池配置，确认是否存在连接泄漏。\n")
+        self.assertFalse(is_loop)
+        # 步骤 B: 检查日志（不同语义）
+        is_loop, _ = guard.feed("现在来全面查看应用服务的运行日志，看看有没有报错堆栈。\n")
+        self.assertFalse(is_loop)
+        # 步骤 A': 再次回到连接池检查（与步骤 A 高度重合的乒乓循环）
+        is_loop, reason = guard.feed("我们必须先来检查数据库连接池的相关配置，确认是否有连接泄漏情况。\n")
+        self.assertTrue(is_loop)
+        self.assertIn("Semantic loop detected", reason)
+        self.assertIn("cycles back to step -2", reason)
+
+    def test_semantic_guard_preserves_progressive_steps(self):
+        """测试结构化推进与数字递增步骤不会被误杀"""
+        from longcat_sentinel.detector.semantic_guard import SemanticStagnationGuard
+
+        guard = SemanticStagnationGuard(enabled=True, similarity_threshold=0.76, min_segment_chars=20)
+        is_loop1, _ = guard.feed("1. 首先我们需要克隆代码仓库并安装依赖项。\n")
+        self.assertFalse(is_loop1)
+        is_loop2, _ = guard.feed("2. 其次我们需要执行数据库迁移脚本并启动服务。\n")
+        self.assertFalse(is_loop2)
+        is_loop3, _ = guard.feed("3. 最后我们需要验证系统各项接口是否全部正常响应。\n")
+        self.assertFalse(is_loop3)
+
+    def test_consecutive_violations_tolerance_setting(self):
+        """测试连续违规容忍度：设置 2 时，单次违规放行，连续 2 次才触发"""
+        from longcat_sentinel.config import BreakerConfig
+
+        bc = BreakerConfig(consecutive_violations_to_trip=2)
+        self.assertEqual(bc.consecutive_violations_to_trip, 2)
+
+    def test_safe_relative_path_exemption(self):
+        """测试安全相对目录清理放行，而全盘破坏性删除依然被严厉拦截"""
+        guard = CapabilityGuard(block_destructive=True)
+        # 1. 安全相对目录清理应放行
+        tier1, hit1 = guard.inspect_tool_call("bash", {"command": "rm -rf ./dist"})
+        self.assertIsNone(hit1)
+        tier2, hit2 = guard.inspect_tool_call("bash", {"command": "rm -rf build"})
+        self.assertIsNone(hit2)
+        tier3, hit3 = guard.inspect_tool_call("powershell", {"command": "Remove-Item -Recurse -Force .\\tmp"})
+        self.assertIsNone(hit3)
+
+        # 2. 真实危险全盘删除必须硬拦截
+        tier_bad, hit_bad = guard.inspect_tool_call("bash", {"command": "rm -rf /"})
+        self.assertEqual(tier_bad, ToolSafetyTier.DESTRUCTIVE)
+        self.assertIsNotNone(hit_bad)
+
+        tier_win, hit_win = guard.inspect_tool_call("powershell", {"command": "Remove-Item -Recurse -Force C:\\"})
+        self.assertEqual(tier_win, ToolSafetyTier.DESTRUCTIVE)
+        self.assertIsNotNone(hit_win)
+
+    def test_evasion_command_detection(self):
+        """测试 Base64 管道解码即时执行与 Hex 混淆动态脚本能被拦截"""
+        guard = CapabilityGuard(block_destructive=True)
+        # Base64 管道执行
+        tier1, hit1 = guard.inspect_tool_call("bash", {"command": "echo cm0gLXJmIC8= | base64 -d | sh"})
+        self.assertEqual(tier1, ToolSafetyTier.DESTRUCTIVE)
+        self.assertIn("Base64", hit1)
+
+        # Python Hex 混淆动态执行
+        tier2, hit2 = guard.inspect_tool_call("bash", {"command": "python -c \"exec(bytes.fromhex('737973'))\""})
+        self.assertEqual(tier2, ToolSafetyTier.DESTRUCTIVE)
+        self.assertIn("Obfuscated", hit2)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

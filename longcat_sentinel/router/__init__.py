@@ -87,6 +87,9 @@ def build_scorer(profile: ProfileConfig, immunity=None) -> LoopScorer:
         longcat_memory_search_threshold=profile.longcat_memory_search_threshold,
         longcat_hesitation_threshold=profile.longcat_hesitation_threshold,
         longcat_standalone_hesitation_threshold=profile.longcat_standalone_hesitation_threshold,
+        semantic_guard_enabled=profile.semantic_guard_enabled,
+        semantic_similarity_threshold=profile.semantic_similarity_threshold,
+        semantic_min_segment_chars=profile.semantic_min_segment_chars,
         code_block_multiplier=(
             immunity.code_block_multiplier if immunity is not None else 1.5
         ),

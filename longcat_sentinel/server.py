@@ -84,11 +84,24 @@ def create_app(config: GatewayConfig) -> FastAPI:
 
     app.include_router(admin_router)
 
+    @app.get("/app_icon.ico")
+    @app.get("/favicon.ico")
+    async def get_app_icon():
+        path = resolve_asset("app_icon.ico")
+        if path:
+            return FileResponse(path, media_type="image/x-icon")
+        return JSONResponse(status_code=404, content={"detail": "Icon not found"})
+
     @app.get("/logo.jpg")
     async def get_logo_image():
-        path = resolve_asset("mmexport1790941560209.jpg") or resolve_asset("logo.jpg")
+        path = (
+            resolve_asset("mmexport1790941560209.jpg")
+            or resolve_asset("logo.jpg")
+            or resolve_asset("app_icon.ico")
+        )
         if path:
-            return FileResponse(path, media_type="image/jpeg")
+            media_type = "image/x-icon" if path.endswith(".ico") else "image/jpeg"
+            return FileResponse(path, media_type=media_type)
         return JSONResponse(status_code=404, content={"detail": "Logo image not found"})
 
     @app.get("/health")

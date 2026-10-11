@@ -37,6 +37,7 @@ from .longcat_reasoning_guard import (
     _SELF_LOOP_PATTERNS,
     is_valid_self_loop_match,
 )
+from .semantic_guard import SemanticStagnationGuard
 
 
 class LoopScorer:
@@ -68,6 +69,9 @@ class LoopScorer:
         longcat_memory_search_threshold: int = 6,
         longcat_hesitation_threshold: int = 5,
         longcat_standalone_hesitation_threshold: int = 6,
+        semantic_guard_enabled: bool = True,
+        semantic_similarity_threshold: float = 0.76,
+        semantic_min_segment_chars: int = 40,
     ):
         self.min_period = max(1, int(min_period))
         self.repeat_threshold = max(2, int(repeat_threshold))
@@ -99,6 +103,13 @@ class LoopScorer:
             self_loop_threshold=self.self_loop_threshold,
         )
 
+        # 语义停滞与词汇信息熵崩塌检测守卫
+        self.semantic_guard = SemanticStagnationGuard(
+            enabled=semantic_guard_enabled,
+            similarity_threshold=semantic_similarity_threshold,
+            min_segment_chars=semantic_min_segment_chars,
+        )
+
         self.last_tool_outputs: List[str] = []
         self.current_score = 0
 
@@ -109,11 +120,12 @@ class LoopScorer:
         self._check_interval = max(self.min_period, 8)
 
     def reset(self) -> None:
-        """Resets both window and internal LongCat reasoning guard states."""
+        """Resets window, internal LongCat reasoning guard, and semantic stagnation guard states."""
         self._window.clear()
         self._window_len = 0
         self._since_check = 0
         self.longcat_guard.reset()
+        self.semantic_guard.reset()
         self.last_tool_outputs.clear()
         self.current_score = 0
 
@@ -133,6 +145,11 @@ class LoopScorer:
         if is_guard_loop:
             return True, guard_reason
 
+        # 2. 触发轻量级语义停滞与词汇熵崩塌分析
+        is_semantic_loop, semantic_reason = self.semantic_guard.feed(text)
+        if is_semantic_loop:
+            return True, semantic_reason
+
         self._window.append(text)
         self._window_len += len(text)
         while self._window_len > self.window_chars and self._window:
@@ -148,11 +165,16 @@ class LoopScorer:
 
     def flush(self) -> Tuple[bool, Optional[str]]:
         """
-        流结束时强制刷新并检查残余内容 (同时冲洗并评估 LongCat guard 缓冲)。
+        流结束时强制刷新并检查残余内容 (同时冲洗并评估 LongCat guard 与 Semantic guard 缓冲)。
         """
         is_guard_loop, guard_reason = self.longcat_guard.flush()
         if is_guard_loop:
             return True, guard_reason
+
+        is_semantic_loop, semantic_reason = self.semantic_guard.flush()
+        if is_semantic_loop:
+            return True, semantic_reason
+
         return self.check_text_repetition(self.get_window_text())
 
     def get_window_text(self) -> str:
