@@ -210,7 +210,10 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
                     )
                     # 保护性截断或替换提示
                     inj_text = CompliantInjector.build_openai_interruption_content(
-                        trip_reason_nonstream, config.breaker.injection_template
+                        trip_reason_nonstream,
+                        config.breaker.injection_template,
+                        streaming_action=getattr(config.breaker, "streaming_action", "protocol_compliant_inject"),
+                        steer_prompt=getattr(config.breaker, "steer_prompt", None),
                     )
                     resp_json["content"] = [{"type": "text", "text": inj_text}]
                     metrics.release_stream()
@@ -362,6 +365,8 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
                                 reason=trip_reason or "",
                                 accumulated_tokens=ring.total_tokens_seen,
                                 injection_template=config.breaker.injection_template,
+                                streaming_action=getattr(config.breaker, "streaming_action", "protocol_compliant_inject"),
+                                steer_prompt=getattr(config.breaker, "steer_prompt", None),
                             )
                             for event in events:
                                 yield event.encode("utf-8")
@@ -476,6 +481,8 @@ async def route_anthropic_messages(request: Request, config: GatewayConfig) -> R
                                 reason=trip_reason or "",
                                 accumulated_tokens=ring.total_tokens_seen,
                                 injection_template=config.breaker.injection_template,
+                                streaming_action=getattr(config.breaker, "streaming_action", "protocol_compliant_inject"),
+                                steer_prompt=getattr(config.breaker, "steer_prompt", None),
                             )
                             for event in events:
                                 yield event.encode("utf-8")

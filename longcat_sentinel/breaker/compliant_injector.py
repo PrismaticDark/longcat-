@@ -63,6 +63,13 @@ def closing_suffix(partial_json: str) -> str:
     return suffix
 
 
+def is_thinking_violation(reason: str) -> bool:
+    r_lower = (reason or "").lower()
+    return any(kw in r_lower for kw in [
+        "think", "thinking", "reasoning", "semantic", "stagnation", "思考", "overthink"
+    ])
+
+
 class CompliantInjector:
     @staticmethod
     def build_anthropic_interruption(
@@ -71,16 +78,15 @@ class CompliantInjector:
         reason: str = "",
         accumulated_tokens: int = 0,
         injection_template: Optional[str] = None,
+        streaming_action: str = "protocol_compliant_inject",
+        steer_prompt: Optional[str] = None,
     ) -> List[str]:
         """
         构建 100% 协议合规的 Anthropic 流式中断事件序列:
         1. 对每个仍在打开状态的 tool_use 块补齐合法 JSON 后缀并 content_block_stop
         2. 关闭其余所有未关闭块
-        3. 开启新 text 块注入中断警告，并合法闭合
+        3. 开启新 text 块注入中断警告或柔性插针引导，并合法闭合
         4. 发送 message_delta(stop_reason=end_turn) 与 message_stop
-
-        `open_tool_blocks` maps a block index to the argument fragment received so
-        far, so the tool-call JSON can be completed with exactly the right suffix.
         """
         events: List[str] = []
         active = sorted(set(active_block_indices or []))
@@ -105,9 +111,13 @@ class CompliantInjector:
                 + "\n\n"
             )
 
-        # 3. 新开独立文本块注入干预系统提示
+        # 3. 新开独立文本块注入干预系统提示或柔性插针引导
         new_text_idx = max_idx + 1
-        warning_text = render_template(injection_template, reason)
+        if streaming_action == "prefill_steer" and is_thinking_violation(reason):
+            warning_text = f"\n\n{(steer_prompt or 'You have thought thoroughly enough. Do not overthink!').strip()}"
+        else:
+            warning_text = render_template(injection_template, reason)
+
         events.append(
             "event: content_block_start\ndata: "
             + json.dumps(
@@ -182,6 +192,18 @@ class CompliantInjector:
         return events
 
     @staticmethod
+    def build_openai_interruption_content(
+        reason: str,
+        injection_template: Optional[str] = None,
+        streaming_action: str = "protocol_compliant_inject",
+        steer_prompt: Optional[str] = None,
+    ) -> str:
+        """构建 OpenAI 非流式响应熔断干预或柔性插针文本。"""
+        if streaming_action == "prefill_steer" and is_thinking_violation(reason):
+            return f"\n\n{(steer_prompt or 'You have thought thoroughly enough. Do not overthink!').strip()}"
+        return render_template(injection_template or DEFAULT_OPENAI_TEMPLATE, reason)
+
+    @staticmethod
     def build_openai_interruption(
         response_id: str,
         model: str,
@@ -189,11 +211,16 @@ class CompliantInjector:
         accumulated_tokens: int = 0,
         finish_reason: str = "stop",
         injection_template: Optional[str] = None,
+        streaming_action: str = "protocol_compliant_inject",
+        steer_prompt: Optional[str] = None,
     ) -> List[str]:
         """构建 100% 协议合规且携带 usage 统计与明确熔断停止状态的 OpenAI Chat Completions 流式中断 chunk 序列。"""
-        warning_text = render_template(
-            injection_template or DEFAULT_OPENAI_TEMPLATE, reason
-        )
+        if streaming_action == "prefill_steer" and is_thinking_violation(reason):
+            warning_text = f"\n\n{(steer_prompt or 'You have thought thoroughly enough. Do not overthink!').strip()}"
+        else:
+            warning_text = render_template(
+                injection_template or DEFAULT_OPENAI_TEMPLATE, reason
+            )
         ts = int(time.time())
 
         chunk_1: dict = {

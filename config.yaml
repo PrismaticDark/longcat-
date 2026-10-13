@@ -49,7 +49,8 @@ security:
 
 breaker:
   active_profile: "code_agent"
-  streaming_action: "protocol_compliant_inject"
+  streaming_action: "prefill_steer"     # 熔断动作：prefill_steer (柔性插针引导，推荐) / protocol_compliant_inject (硬拦截报错)
+  steer_prompt: "You have thought thoroughly enough. Do not overthink!" # 预设提示词之一（英文柔性点醒），用户可自定义
   consecutive_violations_to_trip: 2     # 连续检测到 2 次违规才触发熔断（可设为 1 即刻拦截，或 2~3 降低误杀率）
   injection_template: >-
     
@@ -84,7 +85,7 @@ profiles:
     tool_skeleton_enabled: true         # 开启命令骨架泛化（识别微调搜索后缀与管道的同义空转）
     max_duplicate_skeleton_calls: 3     # 同义命令骨架调用阈值（设为 3 防误杀）
     think_loop_enabled: true
-    max_think_chars: 32000              # 思考链最大保护字符数（充分保障万亿 MoE 深度推理不被误杀）
+    max_think_chars: 48000              # 思考链最大保护字符数（调至48000，硬上限96000，保障万亿MoE深度推理不被误杀）
     longcat_reasoning_guard_enabled: true # 美团 LongCat 递归思考与元反思震荡守卫 (1:1 专属特化)
     longcat_plan_churn_threshold: 3       # 计划推倒重拟阈值 (3 次未执行即熔断)
     longcat_second_guessing_threshold: 3  # 自我怀疑推翻打断阈值

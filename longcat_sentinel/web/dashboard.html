@@ -1494,9 +1494,51 @@
                             <span class="slider"></span>
                         </label>
                     </div>
+                <!-- 5. 思考链字符安全上限设置 -->
+                <div class="form-section">
+                    <div class="form-section-header">
+                        <div class="form-section-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                            思考链字符安全上限 (Max Think Chars)
+                        </div>
+                    </div>
+                    <div class="form-desc">
+                        针对万亿 MoE / 深度推理大模型设定长思考保护上限（默认 48,000 字符，硬安全上限为 2 倍即 96,000 字符），您可以根据具体模型任务自由设定：
+                    </div>
+                    <div class="input-group" style="max-width: 400px; margin-top: 10px;">
+                        <input type="number" id="input-max-think-chars" class="input-control" min="1000" max="256000" step="1000" placeholder="例如 48000">
+                    </div>
                 </div>
 
-                <!-- 4. 自定义中断提示词 -->
+                <!-- 6. 过度思考柔性插针引导 (Steering Prefill) -->
+                <div class="form-section">
+                    <div class="form-section-header">
+                        <div class="form-section-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m18 15-6-6-6 6"/></svg>
+                            过度思考柔性插针引导 (Steering Prefill Prompt)
+                        </div>
+                    </div>
+                    <div class="form-desc">
+                        当模型思考过度或陷入局部停滞时，网关的应对动作（默认推荐柔性插针，不生硬掐断）：
+                    </div>
+                    <div style="display: flex; gap: 16px; margin: 10px 0;">
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                            <input type="radio" name="streaming-action" value="prefill_steer" id="radio-action-prefill_steer" checked>
+                            <span style="font-weight: 600; color: var(--primary);">柔性插针引导（推荐：温柔点醒，促成交付）</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                            <input type="radio" name="streaming-action" value="protocol_compliant_inject" id="radio-action-protocol_compliant_inject">
+                            <span>硬熔断拦截（传统方式：输出保护性中断并终止）</span>
+                        </label>
+                    </div>
+                    <div class="form-desc" style="margin-top: 8px;">
+                        <strong>插针引导提示词（英文）：</strong>
+                        <span style="color: var(--slate-500); font-size: 12px;">（说明：此为推荐预设的其中一种提示词，中文含义：“你已经思考得非常充分了，不要过度思考！”。用户可自由自定义）</span>
+                    </div>
+                    <input type="text" id="input-steer-prompt" class="input-control" style="margin-top: 6px;" placeholder="You have thought thoroughly enough. Do not overthink!">
+                </div>
+
+                <!-- 7. 自定义硬中断提示词 -->
                 <div class="form-section">
                     <div class="form-section-header">
                         <div class="form-section-title">
@@ -2110,6 +2152,18 @@ for chunk in resp:
                 if (data.injection_template) {
                     document.getElementById('input-template').value = data.injection_template;
                 }
+                if (data.max_think_chars !== undefined) {
+                    const mtInput = document.getElementById('input-max-think-chars');
+                    if (mtInput) mtInput.value = data.max_think_chars;
+                }
+                if (data.steer_prompt !== undefined) {
+                    const spInput = document.getElementById('input-steer-prompt');
+                    if (spInput) spInput.value = data.steer_prompt;
+                }
+                if (data.streaming_action !== undefined) {
+                    const actRadio = document.getElementById('radio-action-' + data.streaming_action);
+                    if (actRadio) actRadio.checked = true;
+                }
             } catch (e) {
                 setAuthStatus('加载设置失败：' + e, true);
             }
@@ -2128,6 +2182,13 @@ for chunk in resp:
                 consecutiveVal = parseInt(checkedRadio.value, 10) || 2;
             }
 
+            const maxThinkInput = document.getElementById('input-max-think-chars');
+            const maxThink = maxThinkInput ? (parseInt(maxThinkInput.value, 10) || 48000) : 48000;
+            const steerPromptInput = document.getElementById('input-steer-prompt');
+            const steerPrompt = steerPromptInput ? steerPromptInput.value.trim() : "";
+            const checkedAction = document.querySelector('input[name="streaming-action"]:checked');
+            const streamingAction = checkedAction ? checkedAction.value : 'prefill_steer';
+
             statusText.innerText = "正在保存配置...";
             statusText.style.color = "var(--slate-600)";
 
@@ -2136,7 +2197,10 @@ for chunk in resp:
                     active_profile: currentProfile,
                     block_destructive: blockDestructive,
                     consecutive_violations_to_trip: consecutiveVal,
-                    injection_template: template
+                    injection_template: template,
+                    max_think_chars: maxThink,
+                    steer_prompt: steerPrompt,
+                    streaming_action: streamingAction
                 };
                 if (apiKey) {
                     payload.api_key = apiKey;

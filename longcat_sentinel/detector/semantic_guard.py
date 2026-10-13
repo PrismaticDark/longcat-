@@ -78,15 +78,21 @@ def compute_semantic_similarity(tokens_a: List[str], tokens_b: List[str], text_a
     return max(jaccard, fuzzy_sim)
 
 
+_CODE_ASSIGNMENT_RE = re.compile(r"^\s*([a-zA-Z0-9_$]+)\s*[:=]")
+_CODE_OR_MATH_INDICATORS = re.compile(
+    r"[{}\[\];]|=>|\b(?:new|const|let|var|function|return|THREE|Math|0x[0-9a-fA-F]+|glsl|vec[234]|sin|cos|tan|atan2|clamp|hypot|dot|cross)\b"
+)
+_NUM_OR_HEX_RE = re.compile(r"0x[0-9a-fA-F]+|\b\d+(?:\.\d+)?\b")
+
+
 def is_progressive_content(text_a: str, text_b: str) -> bool:
     """
     Determines if two structurally similar segments represent legitimate progressive
     steps or enumeration rather than degenerate semantic repetition loops.
     """
-    # 1. Number progression (e.g., Step 1 vs Step 2, 步骤 1 vs 步骤 2)
-    num_re = re.compile(r"\b\d+\b")
-    nums_a = num_re.findall(text_a)
-    nums_b = num_re.findall(text_b)
+    # 1. Number and Hex Progression (e.g., Step 1 vs Step 2, 0x1a1a1a vs 0xf0a83e)
+    nums_a = _NUM_OR_HEX_RE.findall(text_a)
+    nums_b = _NUM_OR_HEX_RE.findall(text_b)
     if nums_a and nums_b and nums_a != nums_b:
         return True
 
@@ -98,6 +104,20 @@ def is_progressive_content(text_a: str, text_b: str) -> bool:
         marker_a = list_marker_re.findall(text_a)
         marker_b = list_marker_re.findall(text_b)
         if marker_a != marker_b:
+            return True
+
+    # 3. Code property / variable assignments with distinct keys/targets
+    # (e.g. 'seat: new THREE...' vs 'leg: new THREE...', 'k1 = ...' vs 'k2 = ...')
+    m_a = _CODE_ASSIGNMENT_RE.match(text_a)
+    m_b = _CODE_ASSIGNMENT_RE.match(text_b)
+    if m_a and m_b and m_a.group(1) != m_b.group(1):
+        return True
+
+    # 4. Code & mathematical derivations with distinct identifiers
+    if _CODE_OR_MATH_INDICATORS.search(text_a) and _CODE_OR_MATH_INDICATORS.search(text_b):
+        idents_a = set(re.findall(r"[a-zA-Z_$][a-zA-Z0-9_$]*", text_a))
+        idents_b = set(re.findall(r"[a-zA-Z_$][a-zA-Z0-9_$]*", text_b))
+        if idents_a.symmetric_difference(idents_b):
             return True
 
     return False

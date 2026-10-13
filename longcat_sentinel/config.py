@@ -303,7 +303,7 @@ class ProfileConfig(BaseModel):
     tool_skeleton_enabled: bool = Field(default=True)
     max_duplicate_skeleton_calls: int = Field(default=3, ge=2)
     think_loop_enabled: bool = Field(default=True)
-    max_think_chars: int = Field(default=32000, ge=100)
+    max_think_chars: int = Field(default=48000, ge=100)
     longcat_reasoning_guard_enabled: bool = Field(default=True)
     longcat_plan_churn_threshold: int = Field(default=3, ge=2)
     longcat_second_guessing_threshold: int = Field(default=3, ge=2)
@@ -320,6 +320,15 @@ class ProfileConfig(BaseModel):
 class BreakerConfig(BaseModel):
     active_profile: str = Field(default="code_agent")
     streaming_action: str = Field(default="protocol_compliant_inject")
+    steer_prompt: str = Field(
+        default="You have thought thoroughly enough. Do not overthink!"
+    )
+    steer_prompt_cn: str = Field(
+        default="你已经思考得非常充分了，不要过度思考！"
+    )
+    steer_prompt_desc: str = Field(
+        default="推荐预设提示词之一（纯英文提示，温和提醒大模型结束思考进入交付；中文含义：“你已经思考得非常充分了，不要过度思考！”）。用户可在设置界面自定义修改。"
+    )
     injection_template: str = Field(
         default="\n\n[LongCat Sentinel 保护性中断] ⚠️ 检测到输出内容/思考链陷入高频周期循环或触发高危拦截（原因：{reason}）。网关已保护性截断以节约 Token。"
     )

@@ -212,7 +212,10 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                         tool_tier=trip_tier_nonstream,
                     )
                     inj_text = CompliantInjector.build_openai_interruption_content(
-                        trip_reason_nonstream, config.breaker.injection_template
+                        trip_reason_nonstream,
+                        config.breaker.injection_template,
+                        streaming_action=getattr(config.breaker, "streaming_action", "protocol_compliant_inject"),
+                        steer_prompt=getattr(config.breaker, "steer_prompt", None),
                     )
                     resp_json["choices"] = [
                         {
@@ -398,6 +401,8 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                                 reason=trip_reason or "",
                                 accumulated_tokens=ring.total_tokens_seen,
                                 injection_template=config.breaker.injection_template,
+                                streaming_action=getattr(config.breaker, "streaming_action", "protocol_compliant_inject"),
+                                steer_prompt=getattr(config.breaker, "steer_prompt", None),
                             ):
                                 yield event.encode("utf-8")
                             break
@@ -495,6 +500,8 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                                 reason=trip_reason or "",
                                 accumulated_tokens=ring.total_tokens_seen,
                                 injection_template=config.breaker.injection_template,
+                                streaming_action=getattr(config.breaker, "streaming_action", "protocol_compliant_inject"),
+                                steer_prompt=getattr(config.breaker, "steer_prompt", None),
                             ):
                                 yield event.encode("utf-8")
                             break
@@ -517,6 +524,8 @@ async def route_openai_completions(request: Request, config: GatewayConfig) -> R
                         model=normalized_model,
                         reason=trip_reason or "",
                         injection_template=config.breaker.injection_template,
+                        streaming_action=getattr(config.breaker, "streaming_action", "protocol_compliant_inject"),
+                        steer_prompt=getattr(config.breaker, "steer_prompt", None),
                     ):
                         yield event.encode("utf-8")
                 elif not has_emitted_finish and not tripped:

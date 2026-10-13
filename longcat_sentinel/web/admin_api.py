@@ -101,6 +101,11 @@ async def get_config(request: Request, _admin: str = Depends(verify_admin_auth))
         "tool_guard_enabled": getattr(active_p, "tool_loop_enabled", True) if active_p else True,
         "text_guard_enabled": getattr(active_p, "think_loop_enabled", True) if active_p else True,
         "semantic_guard_enabled": getattr(active_p, "semantic_guard_enabled", True) if active_p else True,
+        "max_think_chars": getattr(active_p, "max_think_chars", 48000) if active_p else 48000,
+        "steer_prompt": getattr(config.breaker, "steer_prompt", "You have thought thoroughly enough. Do not overthink!"),
+        "steer_prompt_cn": getattr(config.breaker, "steer_prompt_cn", "你已经思考得非常充分了，不要过度思考！"),
+        "steer_prompt_desc": getattr(config.breaker, "steer_prompt_desc", "推荐预设提示词之一（纯英文提示，温和提醒大模型结束思考进入交付；中文含义：“你已经思考得非常充分了，不要过度思考！”）。用户可根据需求自定义修改。"),
+        "streaming_action": getattr(config.breaker, "streaming_action", "prefill_steer"),
         "block_destructive": config.tool_guard.block_destructive_patterns,
         "action_on_destructive": config.tool_guard.action_on_destructive,
         "consecutive_violations_to_trip": config.breaker.consecutive_violations_to_trip,
@@ -130,6 +135,9 @@ async def update_config(request: Request, _admin: str = Depends(verify_admin_aut
     tool_guard_enabled = body.get("tool_guard_enabled")
     text_guard_enabled = body.get("text_guard_enabled")
     semantic_guard_enabled = body.get("semantic_guard_enabled")
+    new_max_think_chars = body.get("max_think_chars")
+    new_steer_prompt = body.get("steer_prompt")
+    new_streaming_action = body.get("streaming_action")
 
     if bypass_mode is not None:
         config.bypass_mode = bool(bypass_mode)
@@ -142,6 +150,23 @@ async def update_config(request: Request, _admin: str = Depends(verify_admin_aut
             setattr(active_p, "think_loop_enabled", bool(text_guard_enabled))
         if semantic_guard_enabled is not None:
             setattr(active_p, "semantic_guard_enabled", bool(semantic_guard_enabled))
+        if new_max_think_chars is not None:
+            try:
+                val = int(new_max_think_chars)
+                if val >= 1000:
+                    active_p.max_think_chars = val
+            except (ValueError, TypeError):
+                pass
+
+    if new_steer_prompt is not None:
+        clean_steer = str(new_steer_prompt).strip()
+        if clean_steer:
+            config.breaker.steer_prompt = clean_steer
+
+    if new_streaming_action is not None:
+        action_clean = str(new_streaming_action).strip()
+        if action_clean in ["prefill_steer", "protocol_compliant_inject"]:
+            config.breaker.streaming_action = action_clean
 
     if new_api_key:
         clean_key = str(new_api_key).strip()

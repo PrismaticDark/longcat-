@@ -552,6 +552,46 @@ class TestCompliantInjector(unittest.TestCase):
         self.assertEqual(render_template("x {reason} y", "r"), "x r y")
         self.assertEqual(render_template(None, "r"), render_template(None, "r"))
 
+    def test_anthropic_interruption_supports_prefill_steer_for_thinking(self):
+        """测试柔性插针模式在思考链停滞时注入英文引导词而不使用破坏性中断"""
+        events = CompliantInjector.build_anthropic_interruption(
+            active_block_indices=[0],
+            reason="Semantic stagnation detected: consecutive reasoning segments exhibit 89% lexical overlap",
+            accumulated_tokens=1000,
+            streaming_action="prefill_steer",
+            steer_prompt="You have thought thoroughly enough. Do not overthink!",
+        )
+        objects = self._parse(events)
+        deltas = self._text_deltas(objects)
+        self.assertIn("You have thought thoroughly enough. Do not overthink!", deltas)
+        self.assertNotIn("保护性中断", deltas)
+
+    def test_openai_interruption_supports_prefill_steer_for_thinking(self):
+        """测试 OpenAI 协议在思考链死循环时同样支持柔性插针"""
+        events = CompliantInjector.build_openai_interruption(
+            response_id="chatcmpl-test",
+            model="LongCat-2.5-Preview",
+            reason="Thinking loop detected in deep reasoning",
+            streaming_action="prefill_steer",
+            steer_prompt="You have thought thoroughly enough. Do not overthink!",
+        )
+        blob = "".join(events)
+        self.assertIn("You have thought thoroughly enough. Do not overthink!", blob)
+        self.assertNotIn("保护性截断", blob)
+
+    def test_prefill_steer_keeps_hard_break_for_tool_and_destructive_loops(self):
+        """测试即使开启了 prefill_steer，对于非思考链的工具循环和破坏性命令依然使用硬阻断"""
+        events = CompliantInjector.build_anthropic_interruption(
+            active_block_indices=[0],
+            reason="Repeated identical tool call: 'read_file' invoked 4x",
+            streaming_action="prefill_steer",
+            steer_prompt="You have thought thoroughly enough. Do not overthink!",
+        )
+        objects = self._parse(events)
+        deltas = self._text_deltas(objects)
+        self.assertIn("保护性中断", deltas)
+        self.assertNotIn("Do not overthink", deltas)
+
 
 class TestDeepRedactor(unittest.TestCase):
     """TC-UNIT-500: log redaction never leaks long credentials."""
@@ -1249,6 +1289,33 @@ class TestSelfLoopHeuristicsAntiFalsePositive(unittest.TestCase):
         self.assertFalse(is_loop2)
         is_loop3, _ = guard.feed("3. 最后我们需要验证系统各项接口是否全部正常响应。\n")
         self.assertFalse(is_loop3)
+
+    def test_semantic_guard_preserves_code_and_math_derivations(self):
+        """测试代码字典声明、着色器与逆运动学数学公式推演不会被语义停滞误杀"""
+        from longcat_sentinel.detector.semantic_guard import SemanticStagnationGuard
+
+        guard = SemanticStagnationGuard(enabled=True, similarity_threshold=0.82, min_segment_chars=30)
+        # 1. 结构高度相似的材质定义代码
+        lines = [
+            "black: new THREE.MeshStandardMaterial({color:0x1a1a1a, roughness:0.4}),\n",
+            "frame: new THREE.MeshStandardMaterial({color:0xe0523f, roughness:0.35, metalness:0.5}),\n",
+            "tire: new THREE.MeshStandardMaterial({color:0x222226, roughness:0.9}),\n",
+            "rim: new THREE.MeshStandardMaterial({color:0xc0c4cc, roughness:0.3, metalness:0.8}),\n",
+            "seat: new THREE.MeshStandardMaterial({color:0x6b4a2f, roughness:0.7}),\n",
+            "leg: new THREE.MeshStandardMaterial({color:0xf0a83e, roughness:0.5}),\n",
+        ]
+        for line in lines:
+            is_loop, _ = guard.feed(line)
+            self.assertFalse(is_loop)
+
+        # 2. 连续推演的双腿 IK 运动学公式
+        ik_lines = [
+            "const k1 = {x: hip.x + L1*Math.cos(phi+A), y: hip.y + L1*Math.sin(phi+A)};\n",
+            "const k2 = {x: hip.x + L1*Math.cos(phi-A), y: hip.y + L1*Math.sin(phi-A)};\n",
+        ]
+        for line in ik_lines:
+            is_loop, _ = guard.feed(line)
+            self.assertFalse(is_loop)
 
     def test_consecutive_violations_tolerance_setting(self):
         """测试连续违规容忍度：设置 2 时，单次违规放行，连续 2 次才触发"""
